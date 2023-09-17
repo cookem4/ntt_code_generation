@@ -1,0 +1,90 @@
+grep: .ntt.h.swp: binary file matches
+test_speed.c:    poly_ntt(&ap);
+test_speed.c:    poly_invntt_tomont(&ap);
+poly.c:#include "ntt.h"
+poly.c:* Name:        poly_ntt
+poly.c:void poly_ntt(poly *r)
+poly.c:  ntt(r->coeffs);
+poly.c:* Name:        poly_invntt_tomont
+poly.c:void poly_invntt_tomont(poly *r)
+poly.c:  invntt(r->coeffs);
+poly.h:#define poly_ntt KYBER_NAMESPACE(poly_ntt)
+poly.h:void poly_ntt(poly *r);
+poly.h:#define poly_invntt_tomont KYBER_NAMESPACE(poly_invntt_tomont)
+poly.h:void poly_invntt_tomont(poly *r);
+ntt.h:#define ntt KYBER_NAMESPACE(ntt)
+ntt.h:void ntt(int16_t poly[256]);
+ntt.h:#define invntt KYBER_NAMESPACE(invntt)
+ntt.h:void invntt(int16_t poly[256]);
+CMakeLists.txt:set(KYBER_SRCS kex.c kem.c indcpa.c polyvec.c poly.c ntt.c cbd.c reduce.c verify.c)
+Makefile:SOURCES = kex.c kem.c indcpa.c polyvec.c poly.c ntt.c cbd.c reduce.c verify.c
+Makefile:HEADERS = params.h kex.h kem.h indcpa.h polyvec.h poly.h ntt.h cbd.h reduce.c verify.h symmetric.h
+polyvec.h:#define polyvec_ntt KYBER_NAMESPACE(polyvec_ntt)
+polyvec.h:void polyvec_ntt(polyvec *r);
+polyvec.h:#define polyvec_invntt_tomont KYBER_NAMESPACE(polyvec_invntt_tomont)
+polyvec.h:void polyvec_invntt_tomont(polyvec *r);
+polyvec.c:* Name:        polyvec_ntt
+polyvec.c:void polyvec_ntt(polyvec *r)
+polyvec.c:    poly_ntt(&r->vec[i]);
+polyvec.c:* Name:        polyvec_invntt_tomont
+polyvec.c:void polyvec_invntt_tomont(polyvec *r)
+polyvec.c:    poly_invntt_tomont(&r->vec[i]);
+ntt_grep.log:test_speed.c:    poly_ntt(&ap);
+ntt_grep.log:test_speed.c:    poly_invntt_tomont(&ap);
+ntt_grep.log:poly.c:#include "ntt.h"
+ntt_grep.log:poly.c:* Name:        poly_ntt
+ntt_grep.log:poly.c:void poly_ntt(poly *r)
+ntt_grep.log:poly.c:  ntt(r->coeffs);
+ntt_grep.log:poly.c:* Name:        poly_invntt_tomont
+ntt_grep.log:poly.c:void poly_invntt_tomont(poly *r)
+ntt_grep.log:poly.c:  invntt(r->coeffs);
+ntt_grep.log:poly.h:#define poly_ntt KYBER_NAMESPACE(poly_ntt)
+ntt_grep.log:poly.h:void poly_ntt(poly *r);
+ntt_grep.log:poly.h:#define poly_invntt_tomont KYBER_NAMESPACE(poly_invntt_tomont)
+ntt_grep.log:poly.h:void poly_invntt_tomont(poly *r);
+ntt_grep.log:ntt.h:#define ntt KYBER_NAMESPACE(ntt)
+ntt_grep.log:ntt.h:void ntt(int16_t poly[256]);
+ntt_grep.log:ntt.h:#define invntt KYBER_NAMESPACE(invntt)
+ntt_grep.log:ntt.h:void invntt(int16_t poly[256]);
+ntt_grep.log:CMakeLists.txt:set(KYBER_SRCS kex.c kem.c indcpa.c polyvec.c poly.c ntt.c cbd.c reduce.c verify.c)
+ntt_grep.log:Makefile:SOURCES = kex.c kem.c indcpa.c polyvec.c poly.c ntt.c cbd.c reduce.c verify.c
+ntt_grep.log:Makefile:HEADERS = params.h kex.h kem.h indcpa.h polyvec.h poly.h ntt.h cbd.h reduce.c verify.h symmetric.h
+ntt_grep.log:polyvec.h:#define polyvec_ntt KYBER_NAMESPACE(polyvec_ntt)
+ntt_grep.log:polyvec.h:void polyvec_ntt(polyvec *r);
+ntt_grep.log:polyvec.h:#define polyvec_invntt_tomont KYBER_NAMESPACE(polyvec_invntt_tomont)
+ntt_grep.log:polyvec.h:void polyvec_invntt_tomont(polyvec *r);
+ntt_grep.log:polyvec.c:* Name:        polyvec_ntt
+ntt_grep.log:polyvec.c:void polyvec_ntt(polyvec *r)
+ntt_grep.log:polyvec.c:    poly_ntt(&r->vec[i]);
+ntt_grep.log:polyvec.c:* Name:        polyvec_invntt_tomont
+ntt_grep.log:polyvec.c:void polyvec_invntt_tomont(polyvec *r)
+ntt_grep.log:polyvec.c:    poly_invntt_tomont(&r->vec[i]);
+ntt_grep.log:indcpa.c:#include "ntt.h"
+ntt_grep.log:indcpa.c:  polyvec_ntt(&skpv);
+ntt_grep.log:indcpa.c:  polyvec_ntt(&e);
+ntt_grep.log:indcpa.c:  polyvec_ntt(&sp);
+ntt_grep.log:indcpa.c:  polyvec_invntt_tomont(&b);
+ntt_grep.log:indcpa.c:  poly_invntt_tomont(&v);
+ntt_grep.log:indcpa.c:  polyvec_ntt(&b);
+ntt_grep.log:indcpa.c:  poly_invntt_tomont(&mp);
+ntt_grep.log:ntt.c:#include "ntt.h"
+ntt_grep.log:ntt.c:void init_ntt() {
+ntt_grep.log:ntt.c:* Name:        ntt
+ntt_grep.log:ntt.c:void ntt(int16_t r[256]) {
+ntt_grep.log:ntt.c:* Name:        invntt_tomont
+ntt_grep.log:ntt.c:void invntt(int16_t r[256]) {
+grep: .ntt.c.swp: binary file matches
+indcpa.c:#include "ntt.h"
+indcpa.c:  polyvec_ntt(&skpv);
+indcpa.c:  polyvec_ntt(&e);
+indcpa.c:  polyvec_ntt(&sp);
+indcpa.c:  polyvec_invntt_tomont(&b);
+indcpa.c:  poly_invntt_tomont(&v);
+indcpa.c:  polyvec_ntt(&b);
+indcpa.c:  poly_invntt_tomont(&mp);
+ntt.c:#include "ntt.h"
+ntt.c:void init_ntt() {
+ntt.c:* Name:        ntt
+ntt.c:void ntt(int16_t r[256]) {
+ntt.c:* Name:        invntt_tomont
+ntt.c:void invntt(int16_t r[256]) {
