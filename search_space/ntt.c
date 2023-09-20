@@ -1,5 +1,15 @@
 #include "ntt.h" 
 
+int clog2(long int in) {
+    int count = 0;
+    in--; // For powers of 2
+    while (in > 0) {
+        in >>= 1;
+        count++;
+    }
+    return count;
+}
+
 int a_pow_b_mod_m(int a, int b, int m) {
     int abm = 1;
     for (int i = 0; i < b; i++) {
@@ -19,6 +29,25 @@ int is_prime(int n) {
         d = d + 2;
     }
     return n == 1 ? 0 : 1;
+}
+
+int * get_prime_factors(int n, int *prime_factor_size) {
+    // Max number of prime factors is 2^^clog2(n)
+    int ret_idx = 0;
+    int *ret = calloc(clog2(n), sizeof(int));
+    int fact = 2;
+    while (n > 1) {
+        if (n % fact == 0) {
+            ret[ret_idx] = fact;
+            n /= fact;
+            fact = 2; // Reset factor
+            ret_idx++;
+        } else {
+            fact++;
+        }
+    }
+    *prime_factor_size = ret_idx;
+    return ret;
 }
 
 void get_ntt_params(int n, int * mod, int * g) {
@@ -189,20 +218,21 @@ void ntt_n_squared_3(ntt_ctx * ctx) {
 }
 
 // Simplest recursive implementation, not in place
-int * ntt_recursive(int size, int *x, ntt_ctx * ctx) {
+int * ntt_recursive(int size, int recursive_cnt, int *x, ntt_ctx * ctx) {
     int n0 = ctx->size;
     if (size <= ctx->recursive_base_size) {
         int *y = calloc(size, sizeof(int));
         // Treat as n^2 iterative problem
         for (int i = 0; i < size; i++) {
             for (int j = 0; j < size; j++) {
-                y[i] = (y[i] + (x[j] * a_pow_b_mod_m(ctx->w, i*j*(n0/size) % n0, ctx->mod)) % ctx->mod) % ctx->mod;
+                // y[i] = (y[i] + (x[j] * a_pow_b_mod_m(ctx->w, i*j*(n0/size) % n0, ctx->mod)) % ctx->mod) % ctx->mod;
+                y[i] = barrett_reduce(y[i] + barrett_reduce(x[j] * a_pow_b_mod_m(ctx->w, i*j*(n0/size) % n0, ctx->mod), ctx), ctx);
             }
         }
         return y;
     } else {
-        int n1 = ctx->recursive_dec_size;
-        int n2 = size/ctx->recursive_dec_size; // NOTE: Must be an integer
+        int n1 = (ctx->type == FAST_FIXED) ? ctx->recursive_dec_size : ctx->prime_factors[recursive_cnt];
+        int n2 = size/n1; // Guaranteed an integer
         // Break up data into N1 sub-transforms of size N2
         int ** x_sub = calloc(n1, sizeof(int*));
         // Output pointers
@@ -217,12 +247,14 @@ int * ntt_recursive(int size, int *x, ntt_ctx * ctx) {
         }
         // Recursive calls
         for (int i = 0; i < n1; i++) {
-            y_sub[i] = ntt_recursive(n2, x_sub[i], ctx);
+            y_sub[i] = ntt_recursive(n2, recursive_cnt++, x_sub[i], ctx);
         }
         // Butterfly back into original array
         for (int i = 0; i < size; i++) {
             for (int j = 0; j < n1; j++) {
-                y[i] = (y[i] + (y_sub[j][i % n2] * a_pow_b_mod_m(ctx->w, i*j*(n0/size) % n0, ctx->mod)) % ctx->mod) % ctx->mod;
+                // TODO below is mod operation vs barrett reduction
+                // y[i] = (y[i] + (y_sub[j][i % n2] * a_pow_b_mod_m(ctx->w, i*j*(n0/size) % n0, ctx->mod)) % ctx->mod) % ctx->mod;
+                y[i] = barrett_reduce(y[i] + barrett_reduce(y_sub[j][i % n2] * a_pow_b_mod_m(ctx->w, i*j*(n0/size) % n0, ctx->mod), ctx), ctx);
             }
         }
         // Free allocated temp x data
@@ -316,10 +348,11 @@ int ntt_check(ntt_ctx *fwd_ctx, ntt_ctx *inv_ctx) {
             ntt_n_squared_3(inv_ctx);
             break;
 
-        case FAST:
-            fwd_ctx->out_seq = ntt_recursive(fwd_ctx->size, fwd_ctx->in_seq, fwd_ctx);
+        case FAST_FIXED:
+        case FAST_MIXED:
+            fwd_ctx->out_seq = ntt_recursive(fwd_ctx->size, 0, fwd_ctx->in_seq, fwd_ctx);
             inv_ctx->in_seq = fwd_ctx->out_seq;
-            inv_ctx->out_seq = ntt_recursive(inv_ctx->size, inv_ctx->in_seq, inv_ctx);
+            inv_ctx->out_seq = ntt_recursive(inv_ctx->size, 0, inv_ctx->in_seq, inv_ctx);
             break;
     }
         
