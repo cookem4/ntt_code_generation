@@ -302,13 +302,14 @@ void ntt_inplace_ct(ntt_ctx * ctx) {
 }
 */
 
+// TODO multi-radix in-place
 void ntt_inplace(ntt_ctx * ctx) {
     int *x = ctx->in_seq;
     int t1, t2;
     int twiddle1, twiddle2;
     int cur_size;
     int cur_idx;
-    int half_rot = a_pow_b_mod_m(ctx->w, ctx->size>>1, ctx->mod);
+    int half_rot = a_pow_b_mod_m(ctx->w, ctx->size/2, ctx->mod);
     for (int stride = ctx->size>>1; stride >= 1; stride >>= 1) { // log n
         cur_size = stride<<1;
         // For each of the "sub-transforms" in the CT butterfly
@@ -316,12 +317,12 @@ void ntt_inplace(ntt_ctx * ctx) {
             // We take steps within our sub transform
             for (int step = 0; step < stride; step++) {
                 cur_idx = sub_trans_idx*cur_size + step;
-                printf("Cur size: %d Idx 1: %d Idx 2: %d\n", cur_size, cur_idx, cur_idx + stride);
                 twiddle1 = a_pow_b_mod_m(ctx->w, sub_trans_idx*(stride) % ctx->size, ctx->mod);
                 // Twiddle 2 is offset half a rotation from twiddle 1
                 twiddle2 = barrett_reduce(twiddle1 * half_rot, ctx);
                 t1 = barrett_reduce(x[cur_idx + stride] * twiddle1, ctx);
                 t2 = barrett_reduce(x[cur_idx + stride] * twiddle2, ctx);
+                // printf("Sub trans: %d Cur size: %d Idx 1: %d Twiddle 1: %d Idx 2: %d Twiddle 2: %d \n", sub_trans_idx, cur_size, cur_idx, sub_trans_idx*stride % ctx->size, cur_idx + stride, (ctx->size/2 + sub_trans_idx*stride) % ctx->size);
                 // base 2
                 x[cur_idx + stride] = x[cur_idx] + t2;
                 x[cur_idx] = x[cur_idx] + t1;
@@ -331,9 +332,12 @@ void ntt_inplace(ntt_ctx * ctx) {
             }
         }
     }
+    /*
     for (int i = 0; i < ctx->size; i++) {
         printf("NTT(%d) = %d\n", i, x[i]);
     }
+    */
+    ctx->out_seq = x;
 }
 
 /*
@@ -429,7 +433,7 @@ int ntt_check(ntt_ctx *fwd_ctx, ntt_ctx *inv_ctx) {
         case FAST_FIXED_INPLACE:
             ntt_inplace(fwd_ctx);
             inv_ctx->in_seq = fwd_ctx->out_seq;
-            intt_inplace(inv_ctx);
+            ntt_inplace(inv_ctx);
             break;
     }
         
