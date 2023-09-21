@@ -5,7 +5,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 
-// TODO defined VIA makefile
+// TODO defined via makefile
 // #define NTT_TYPE FAST
 // #define DIM 512
 
@@ -15,7 +15,7 @@
 // TODO for fixed radix
 #define RECURSIVE_DECIMATION 2
 
-#define FAIL_PRINT_INFO 0
+#define FAIL_PRINT_INFO 1
 
 typedef enum {
     MTX,
@@ -24,6 +24,7 @@ typedef enum {
     N2_3,
     FAST_FIXED,
     FAST_MIXED,
+    FAST_FIXED_INPLACE,
 } NTT_TYPE_t;
 
 typedef struct {
@@ -50,5 +51,6 @@ int is_prime(int n);
 void get_ntt_params(int n, int * mod, int * g);
 int * get_prime_factors(int n, int *prime_factor_size);
 int clog2(long int in);
+void sort(int *x, size_t size);
 
 #endif // NTT_H

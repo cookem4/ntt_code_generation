@@ -42,8 +42,8 @@ int main() {
     inv_ctx.barrett_r = fwd_ctx.barrett_r;
     int in_seq_fwd[DIM];
     for (int i = 0; i < DIM; i++) {
-        in_seq_fwd[i] = rand() % fwd_ctx.mod;
-        // in_seq_fwd[i] = i;
+        // in_seq_fwd[i] = rand() % fwd_ctx.mod;
+        in_seq_fwd[i] = i;
     }
     fwd_ctx.in_seq = in_seq_fwd;
     if (!ntt_check(&fwd_ctx, &inv_ctx)) {

@@ -1,5 +1,20 @@
 #include "ntt.h" 
 
+// Comparison function for qsort
+int compare(const void *a, const void *b) {
+    // Cast the void pointers to the correct data type (int*)
+    int int_a = *((int*)a);
+    int int_b = *((int*)b);
+
+    // Compare the integers
+    return int_b - int_a;
+}
+
+// Function to sort an array using qsort
+void sort(int *x, size_t size) {
+    qsort(x, size, sizeof(int), compare);
+}
+
 int clog2(long int in) {
     int count = 0;
     in--; // For powers of 2
@@ -47,6 +62,8 @@ int * get_prime_factors(int n, int *prime_factor_size) {
         }
     }
     *prime_factor_size = ret_idx;
+    // Sort the prime largest to smallest
+    sort(ret, (size_t) ret_idx);
     return ret;
 }
 
@@ -220,13 +237,13 @@ void ntt_n_squared_3(ntt_ctx * ctx) {
 // Simplest recursive implementation, not in place
 int * ntt_recursive(int size, int recursive_cnt, int *x, ntt_ctx * ctx) {
     int n0 = ctx->size;
-    if (size <= ctx->recursive_base_size) {
+    if (size <= ctx->recursive_base_size || recursive_cnt == (ctx->prime_factor_size-1)) {
         int *y = calloc(size, sizeof(int));
         // Treat as n^2 iterative problem
         for (int i = 0; i < size; i++) {
             for (int j = 0; j < size; j++) {
-                // y[i] = (y[i] + (x[j] * a_pow_b_mod_m(ctx->w, i*j*(n0/size) % n0, ctx->mod)) % ctx->mod) % ctx->mod;
-                y[i] = barrett_reduce(y[i] + barrett_reduce(x[j] * a_pow_b_mod_m(ctx->w, i*j*(n0/size) % n0, ctx->mod), ctx), ctx);
+                y[i] = (y[i] + (x[j] * a_pow_b_mod_m(ctx->w, i*j*((int) n0/size) % n0, ctx->mod)) % ctx->mod) % ctx->mod;
+                // y[i] = barrett_reduce(y[i] + barrett_reduce(x[j] * a_pow_b_mod_m(ctx->w, i*j*(n0/size) % n0, ctx->mod), ctx), ctx);
             }
         }
         return y;
@@ -246,15 +263,16 @@ int * ntt_recursive(int size, int recursive_cnt, int *x, ntt_ctx * ctx) {
             }
         }
         // Recursive calls
+        recursive_cnt++;
         for (int i = 0; i < n1; i++) {
-            y_sub[i] = ntt_recursive(n2, recursive_cnt++, x_sub[i], ctx);
+            y_sub[i] = ntt_recursive(n2, recursive_cnt, x_sub[i], ctx);
         }
         // Butterfly back into original array
         for (int i = 0; i < size; i++) {
             for (int j = 0; j < n1; j++) {
                 // TODO below is mod operation vs barrett reduction
-                // y[i] = (y[i] + (y_sub[j][i % n2] * a_pow_b_mod_m(ctx->w, i*j*(n0/size) % n0, ctx->mod)) % ctx->mod) % ctx->mod;
-                y[i] = barrett_reduce(y[i] + barrett_reduce(y_sub[j][i % n2] * a_pow_b_mod_m(ctx->w, i*j*(n0/size) % n0, ctx->mod), ctx), ctx);
+                // y[i] = (y[i] + (y_sub[j][i % n2] * a_pow_b_mod_m(ctx->w, i*j*((int) n0/size) % n0, ctx->mod)) % ctx->mod) % ctx->mod;
+                y[i] = barrett_reduce(y[i] + barrett_reduce(y_sub[j][i % n2] * a_pow_b_mod_m(ctx->w, i*j*((int) n0/size) % n0, ctx->mod), ctx), ctx);
             }
         }
         // Free allocated temp x data
@@ -267,60 +285,113 @@ int * ntt_recursive(int size, int recursive_cnt, int *x, ntt_ctx * ctx) {
 }
 
 /*
-void ntt(ntt_ctx * ctx) {
-  int len, start, k, j, t, zeta;
-  int *r = malloc(ctx->size * sizeof(int));
-  for (int i = 0; i < ctx->size; i++) {
-      r[i] = ctx->in_seq[i];
-  }
-  k = 1;
-  for(len = ctx->size>>1; len >= 2; len >>= 1) {
-    for(start = 0; start < ctx->size; start = j + len) {
-      zeta = ctx->zetas[k++];
-      zeta = a_pow_b_mod_m(ctx->w, len, ctx->mod);
-      for(j = start; j < start + len; j++) {
-        t = fqmul(zeta, r[j + len], ctx);
-        r[j + len] = r[j] - t;
-        r[j] = r[j] + t;
-      }
+void ntt_inplace_ct(ntt_ctx * ctx) {
+    int16_t t, twiddle;
+    k = 1
+    int *x = ctx->in_seq;
+    for(len = ctx->size>>1; len >= 2; len >>= 1) {
+        for(start = 0; start < ctx->size; start = j + len) {
+            twiddle = a_pow_b_mod_m(ctx->w, (start + 
+            for(j = start; j < start + len; j++) {
+                t = barrett_reduce(twiddle * x[j + len]);
+                x[j + len] = x[j] - t;
+                x[j] = x[j] + t;
+            }
+        }
     }
-  }
-  ctx->out_seq = r;
+}
+*/
 
-  // Reduce
-  for(j = 0; j < 256; j++)
-    r[j] = barrett_reduce(r[j], ctx);
+void ntt_inplace(ntt_ctx * ctx) {
+    int *x = ctx->in_seq;
+    int t1, t2;
+    int twiddle1, twiddle2;
+    int cur_size;
+    int cur_idx;
+    int half_rot = a_pow_b_mod_m(ctx->w, ctx->size>>1, ctx->mod);
+    for (int stride = ctx->size>>1; stride >= 1; stride >>= 1) { // log n
+        cur_size = stride<<1;
+        // For each of the "sub-transforms" in the CT butterfly
+        for (int sub_trans_idx = 0; sub_trans_idx < ctx->size/cur_size; sub_trans_idx++) {
+            // We take steps within our sub transform
+            for (int step = 0; step < stride; step++) {
+                cur_idx = sub_trans_idx*cur_size + step;
+                printf("Cur size: %d Idx 1: %d Idx 2: %d\n", cur_size, cur_idx, cur_idx + stride);
+                twiddle1 = a_pow_b_mod_m(ctx->w, sub_trans_idx*(stride) % ctx->size, ctx->mod);
+                // Twiddle 2 is offset half a rotation from twiddle 1
+                twiddle2 = barrett_reduce(twiddle1 * half_rot, ctx);
+                t1 = barrett_reduce(x[cur_idx + stride] * twiddle1, ctx);
+                t2 = barrett_reduce(x[cur_idx + stride] * twiddle2, ctx);
+                // base 2
+                x[cur_idx + stride] = x[cur_idx] + t2;
+                x[cur_idx] = x[cur_idx] + t1;
+                // Reduce
+                x[cur_idx + stride] = x[cur_idx + stride] > ctx->mod ? x[cur_idx + stride] - ctx->mod : x[cur_idx + stride];
+                x[cur_idx] = x[cur_idx] > ctx->mod ? x[cur_idx] - ctx->mod : x[cur_idx];
+            }
+        }
+    }
+    for (int i = 0; i < ctx->size; i++) {
+        printf("NTT(%d) = %d\n", i, x[i]);
+    }
 }
 
-void intt(ntt_ctx * ctx) {
-  int start, len, j, t, k, zeta;
-  const int f = 1441; // mont^2/128
-  int *r = malloc(ctx->size * sizeof(int));
+/*
+void ntt_inplace(ntt_ctx * ctx) {
+    int ni, n0, n1, n2, start, k, j, t1, t2, zeta, sub_twiddle, twiddle1, twiddle2;
+    int *x = malloc(ctx->size * sizeof(int));
+    for (int i = 0; i < ctx->size; i++) {
+        x[i] = ctx->in_seq[i];
+    }
+    k = 1;
+    n0 = ctx->size;
+    n1 = 2;
+    n2 = n0/n1;
+    // Break up data into N1 sub-transforms of size N2
+    for(ni = n0; ni >= n1; ni /= n1) { // Current transform length
+        for(j = 0; j < n0; j += n1) { // Position of this transform within the in-place array
+            sub_twiddle = a_pow_b_mod_m(ctx->w, ni/n0, ctx->mod);
+            twiddle1 = a_pow_b_mod_m(sub_twiddle, j/n1     , ctx->mod);
+            twiddle2 = a_pow_b_mod_m(sub_twiddle, j/n1 + ni/2, ctx->mod);
+            t1 = barrett_reduce(twiddle1 * x[j + ni], ctx);
+            t2 = barrett_reduce(twiddle2 * x[j + ni], ctx);
+            x[j + ni] = x[j] + t1 > ctx->mod ? x[j] + t1 - ctx->mod : x[j] + t1;
+            x[j] = x[j] + t2 > ctx->mod ? x[j] + t2 - ctx->mod : x[j] + t2;
+            printf("ni: %d j: %d pow1: %d j + ni %d pow2: %d\n", ni, j, j/n1, j/n1 + ni/2, j + ni);
+        }
+    }
+    ctx->out_seq = x;
+
+    // Reduce
+    for(j = 0; j < ctx->size; j++)
+        x[j] = barrett_reduce(x[j], ctx);
+}
+*/
+
+void intt_inplace(ntt_ctx * ctx) {
+  int start, len, j, t, k, twiddle;
+  int *x = malloc(ctx->size * sizeof(int));
   for (int i = 0; i < ctx->size; i++) {
-      r[i] = ctx->in_seq[i];
+      x[i] = ctx->in_seq[i];
   }
   k = (ctx->size>>1) - 1;
   for(len = 2; len <= ctx->size>>1; len <<= 1) {
     for(start = 0; start < ctx->size; start = j + len) {
-      zeta = ctx->zetas[k--];
+      twiddle = a_pow_b_mod_m(ctx->w, len, ctx->mod);
       for(j = start; j < start + len; j++) {
-        t = r[j];
-        r[j] = barrett_reduce(t + r[j + len], ctx);
-        r[j + len] = r[j + len] - t;
-        r[j + len] = fqmul(zeta, r[j + len], ctx);
+        t = x[j];
+        x[j] = barrett_reduce(t + x[j + len], ctx);
+        x[j + len] = x[j + len] - t;
+        x[j + len] = barrett_reduce(twiddle * x[j + len], ctx);
       }
     }
   }
 
   for(j = 0; j < 256; j++)
-    r[j] = fqmul(r[j], f, ctx);
+    x[j] = barrett_reduce(x[j], ctx);
 
-  for(j = 0; j < 256; j++)
-    r[j] = barrett_reduce(r[j], ctx);
-
-  ctx->out_seq = r;
+  ctx->out_seq = x;
 }
-*/
 
 int ntt_check(ntt_ctx *fwd_ctx, ntt_ctx *inv_ctx) {
     switch (fwd_ctx->type) {
@@ -353,6 +424,12 @@ int ntt_check(ntt_ctx *fwd_ctx, ntt_ctx *inv_ctx) {
             fwd_ctx->out_seq = ntt_recursive(fwd_ctx->size, 0, fwd_ctx->in_seq, fwd_ctx);
             inv_ctx->in_seq = fwd_ctx->out_seq;
             inv_ctx->out_seq = ntt_recursive(inv_ctx->size, 0, inv_ctx->in_seq, inv_ctx);
+            break;
+
+        case FAST_FIXED_INPLACE:
+            ntt_inplace(fwd_ctx);
+            inv_ctx->in_seq = fwd_ctx->out_seq;
+            intt_inplace(inv_ctx);
             break;
     }
         
