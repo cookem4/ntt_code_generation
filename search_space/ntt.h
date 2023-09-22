@@ -17,6 +17,19 @@
 
 #define FAIL_PRINT_INFO 1
 
+#define DO_TIME 1
+// #define CHECK_STACK 0
+
+#define TYPE_MTX 0
+#define TYPE_N2_1 1
+#define TYPE_N2_2 2
+#define TYPE_N2_3 3
+#define TYPE_FAST_FIXED 4
+#define TYPE_FAST_MIXED 5
+#define TYPE_FAST_FIXED_INPLACE 6
+#define TYPE_FAST_MIXED_INPLACE 7
+
+// Not used exclusing fast and fast mixed to share recursive func
 typedef enum {
     MTX,
     N2_1,
@@ -25,6 +38,7 @@ typedef enum {
     FAST_FIXED,
     FAST_MIXED,
     FAST_FIXED_INPLACE,
+    FAST_MIXED_INPLACE,
 } NTT_TYPE_t;
 
 typedef struct {

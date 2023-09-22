@@ -1,5 +1,42 @@
 #include "ntt.h" 
 
+#if CHECK_STACK
+static void *g_stack_top = NULL;
+static int g_stack_grows_up = 0;
+static int g_stack_grows_up_init_done = 0;
+static void *g_stack_ptr_r = NULL;
+static void *g_stack_init = NULL;
+static long int g_peak_stack_size = 0;
+
+void profile_stack() {
+    void *stack_ptr;
+    asm volatile("movq %%rsp, %0" : "=r" (stack_ptr));
+    if (g_stack_init == NULL) {
+        g_stack_init = stack_ptr;
+        g_stack_top = stack_ptr;
+    }
+    if (g_stack_ptr_r != NULL) {
+        if (g_stack_ptr_r < stack_ptr && !g_stack_grows_up_init_done) {
+            g_stack_grows_up = 1;
+            g_stack_grows_up_init_done = 1;
+        } else if (!g_stack_grows_up_init_done) {
+            g_stack_grows_up = 0;
+            g_stack_grows_up_init_done = 1;
+        }
+        if (g_stack_grows_up && g_stack_top < stack_ptr ||
+           !g_stack_grows_up && g_stack_top > stack_ptr) {
+            g_stack_top = stack_ptr;
+            if (g_stack_grows_up) {
+                g_peak_stack_size = g_stack_top - g_stack_init;
+            } else {
+                g_peak_stack_size = g_stack_init - g_stack_top;
+            }
+        }
+    }
+    g_stack_ptr_r = stack_ptr;
+}
+#endif
+
 // Comparison function for qsort
 int compare(const void *a, const void *b) {
     // Cast the void pointers to the correct data type (int*)
@@ -140,6 +177,7 @@ int fqmul(int a, int b, ntt_ctx *ctx) {
 
 // As matrtix by vector multiplication with NTT matrix. Worst Case since we
 // store the matrix
+#if NTT_TYPE == TYPE_MTX
 void ntt_mtx(ntt_ctx * ctx) {
   int *nttmtx  = malloc(ctx->size * ctx->size * sizeof(int));
   int *r  = malloc(ctx->size * sizeof(int));
@@ -163,8 +201,10 @@ void ntt_mtx(ntt_ctx * ctx) {
       s[i] = s[i] < 0 ? s[i] + ctx->mod : s[i];
   }
 }
+#endif
 
 // Super simple but inefficient
+#if NTT_TYPE == TYPE_N2_1
 void ntt_n_squared(ntt_ctx * ctx) {
   int *r  = malloc(ctx->size * sizeof(int));
   int *s  = malloc(ctx->size * sizeof(int));
@@ -183,8 +223,10 @@ void ntt_n_squared(ntt_ctx * ctx) {
       s[i] = s[i] < 0 ? s[i] + ctx->mod : s[i];
   }
 }
+#endif
 
 // Re-use power computations
+#if NTT_TYPE == TYPE_N2_2
 void ntt_n_squared_2(ntt_ctx * ctx) {
   int *r  = malloc(ctx->size * sizeof(int));
   int *s  = malloc(ctx->size * sizeof(int));
@@ -208,8 +250,10 @@ void ntt_n_squared_2(ntt_ctx * ctx) {
       s[i] = s[i] < 0 ? s[i] + ctx->mod : s[i];
   }
 }
+#endif
 
 // Use barrett reduction instead of mod
+#if NTT_TYPE == TYPE_N2_3
 void ntt_n_squared_3(ntt_ctx * ctx) {
   int *r  = malloc(ctx->size * sizeof(int));
   int *s  = malloc(ctx->size * sizeof(int));
@@ -233,9 +277,14 @@ void ntt_n_squared_3(ntt_ctx * ctx) {
       s[i] = s[i] < 0 ? s[i] + ctx->mod : s[i];
   }
 }
+#endif
 
 // Simplest recursive implementation, not in place
+#if NTT_TYPE == TYPE_FAST_FIXED || NTT_TYPE == TYPE_FAST_MIXED
 int * ntt_recursive(int size, int recursive_cnt, int *x, ntt_ctx * ctx) {
+#if CHECK_STACK
+    profile_stack();
+#endif
     int n0 = ctx->size;
     if (size <= ctx->recursive_base_size || recursive_cnt == (ctx->prime_factor_size-1)) {
         int *y = calloc(size, sizeof(int));
@@ -283,26 +332,9 @@ int * ntt_recursive(int size, int recursive_cnt, int *x, ntt_ctx * ctx) {
         return y;
     }
 }
+#endif
 
-/*
-void ntt_inplace_ct(ntt_ctx * ctx) {
-    int16_t t, twiddle;
-    k = 1
-    int *x = ctx->in_seq;
-    for(len = ctx->size>>1; len >= 2; len >>= 1) {
-        for(start = 0; start < ctx->size; start = j + len) {
-            twiddle = a_pow_b_mod_m(ctx->w, (start + 
-            for(j = start; j < start + len; j++) {
-                t = barrett_reduce(twiddle * x[j + len]);
-                x[j + len] = x[j] - t;
-                x[j] = x[j] + t;
-            }
-        }
-    }
-}
-*/
-
-// TODO multi-radix in-place
+#if NTT_TYPE == TYPE_FAST_FIXED_INPLACE
 void ntt_inplace(ntt_ctx * ctx) {
     int *x = ctx->in_seq;
     int t1, t2;
@@ -320,123 +352,91 @@ void ntt_inplace(ntt_ctx * ctx) {
                 twiddle1 = a_pow_b_mod_m(ctx->w, sub_trans_idx*(stride) % ctx->size, ctx->mod);
                 // Twiddle 2 is offset half a rotation from twiddle 1
                 twiddle2 = barrett_reduce(twiddle1 * half_rot, ctx);
-                t1 = barrett_reduce(x[cur_idx + stride] * twiddle1, ctx);
-                t2 = barrett_reduce(x[cur_idx + stride] * twiddle2, ctx);
-                // printf("Sub trans: %d Cur size: %d Idx 1: %d Twiddle 1: %d Idx 2: %d Twiddle 2: %d \n", sub_trans_idx, cur_size, cur_idx, sub_trans_idx*stride % ctx->size, cur_idx + stride, (ctx->size/2 + sub_trans_idx*stride) % ctx->size);
-                // base 2
-                x[cur_idx + stride] = x[cur_idx] + t2;
-                x[cur_idx] = x[cur_idx] + t1;
-                // Reduce
-                x[cur_idx + stride] = x[cur_idx + stride] > ctx->mod ? x[cur_idx + stride] - ctx->mod : x[cur_idx + stride];
-                x[cur_idx] = x[cur_idx] > ctx->mod ? x[cur_idx] - ctx->mod : x[cur_idx];
+                x[cur_idx + stride] = barrett_reduce(x[cur_idx] + x[cur_idx + stride] * twiddle2, ctx);
+                x[cur_idx] = barrett_reduce(x[cur_idx] + x[cur_idx + stride] * twiddle1, ctx);
             }
         }
     }
-    /*
-    for (int i = 0; i < ctx->size; i++) {
-        printf("NTT(%d) = %d\n", i, x[i]);
-    }
-    */
     ctx->out_seq = x;
 }
+#endif
 
-/*
-void ntt_inplace(ntt_ctx * ctx) {
-    int ni, n0, n1, n2, start, k, j, t1, t2, zeta, sub_twiddle, twiddle1, twiddle2;
-    int *x = malloc(ctx->size * sizeof(int));
-    for (int i = 0; i < ctx->size; i++) {
-        x[i] = ctx->in_seq[i];
-    }
-    k = 1;
-    n0 = ctx->size;
-    n1 = 2;
-    n2 = n0/n1;
-    // Break up data into N1 sub-transforms of size N2
-    for(ni = n0; ni >= n1; ni /= n1) { // Current transform length
-        for(j = 0; j < n0; j += n1) { // Position of this transform within the in-place array
-            sub_twiddle = a_pow_b_mod_m(ctx->w, ni/n0, ctx->mod);
-            twiddle1 = a_pow_b_mod_m(sub_twiddle, j/n1     , ctx->mod);
-            twiddle2 = a_pow_b_mod_m(sub_twiddle, j/n1 + ni/2, ctx->mod);
-            t1 = barrett_reduce(twiddle1 * x[j + ni], ctx);
-            t2 = barrett_reduce(twiddle2 * x[j + ni], ctx);
-            x[j + ni] = x[j] + t1 > ctx->mod ? x[j] + t1 - ctx->mod : x[j] + t1;
-            x[j] = x[j] + t2 > ctx->mod ? x[j] + t2 - ctx->mod : x[j] + t2;
-            printf("ni: %d j: %d pow1: %d j + ni %d pow2: %d\n", ni, j, j/n1, j/n1 + ni/2, j + ni);
+#if NTT_TYPE == TYPE_FAST_MIXED_INPLACE
+void ntt_inplace_mixed_radix(ntt_ctx * ctx) {
+    int *x = ctx->in_seq;
+    int t;
+    int twiddle;
+    int n_cur = ctx->size;
+    int orig_size = ctx->size;
+    int fact_cnt = 0;
+    int dst_idx;
+    for (int n2 = n_cur/ctx->prime_factors[fact_cnt]; n2 > 1; n2 /= (ctx->prime_factors[fact_cnt])) { // log n
+        // For each of the "sub-transforms" in the CT butterfly
+        for (int n1 = 0; n1 < orig_size/n_cur; n1++) {
+            // We take steps within our sub transform
+            for (int ni = 0; ni < n2; ni++) {
+                int *x_t = calloc(ctx->prime_factors[fact_cnt], sizeof(int));
+                for (int butterfly_i = 0; butterfly_i < ctx->prime_factors[fact_cnt]; butterfly_i++) {
+                    dst_idx = n1*n_cur + ni + butterfly_i*n2;
+                    x_t[butterfly_i] = x[dst_idx]; // Temp save
+                }
+                // We have N^2 terms to add where N is the prime factor
+                // Since N sums into each N node of the sub transform
+                for (int butterfly_i = 0; butterfly_i < ctx->prime_factors[fact_cnt]; butterfly_i++) {
+                    for (int butterfly_j = 0; butterfly_j < ctx->prime_factors[fact_cnt]; butterfly_j++) {
+                        dst_idx = n1*n_cur + ni + butterfly_i*n2;
+                        x[dst_idx] =  barrett_reduce(x[dst_idx] + x_t[butterfly_j] *
+                                      a_pow_b_mod_m(ctx->w, ((n_cur/ctx->size)*ni*butterfly_j + (butterfly_i * ctx->size/ctx->prime_factors[fact_cnt]))
+                                      % ctx->size, ctx->mod), ctx);
+                    }
+                }
+                free(x_t);
+            }
         }
+        // Size for next iter
+        n_cur = n2;
+        fact_cnt++;
     }
     ctx->out_seq = x;
-
-    // Reduce
-    for(j = 0; j < ctx->size; j++)
-        x[j] = barrett_reduce(x[j], ctx);
 }
-*/
+#endif
 
-void intt_inplace(ntt_ctx * ctx) {
-  int start, len, j, t, k, twiddle;
-  int *x = malloc(ctx->size * sizeof(int));
-  for (int i = 0; i < ctx->size; i++) {
-      x[i] = ctx->in_seq[i];
-  }
-  k = (ctx->size>>1) - 1;
-  for(len = 2; len <= ctx->size>>1; len <<= 1) {
-    for(start = 0; start < ctx->size; start = j + len) {
-      twiddle = a_pow_b_mod_m(ctx->w, len, ctx->mod);
-      for(j = start; j < start + len; j++) {
-        t = x[j];
-        x[j] = barrett_reduce(t + x[j + len], ctx);
-        x[j + len] = x[j + len] - t;
-        x[j + len] = barrett_reduce(twiddle * x[j + len], ctx);
-      }
-    }
-  }
-
-  for(j = 0; j < 256; j++)
-    x[j] = barrett_reduce(x[j], ctx);
-
-  ctx->out_seq = x;
-}
 
 int ntt_check(ntt_ctx *fwd_ctx, ntt_ctx *inv_ctx) {
-    switch (fwd_ctx->type) {
-        case MTX:
-            ntt_mtx(fwd_ctx);
-            inv_ctx->in_seq = fwd_ctx->out_seq;
-            ntt_mtx(inv_ctx);
-            break;
 
-        case N2_1:
-            ntt_n_squared(fwd_ctx);
-            inv_ctx->in_seq = fwd_ctx->out_seq;
-            ntt_n_squared(inv_ctx);
-            break;
-
-        case N2_2:
-            ntt_n_squared_2(fwd_ctx);
-            inv_ctx->in_seq = fwd_ctx->out_seq;
-            ntt_n_squared_2(inv_ctx);
-            break;
-
-        case N2_3:
-            ntt_n_squared_3(fwd_ctx);
-            inv_ctx->in_seq = fwd_ctx->out_seq;
-            ntt_n_squared_3(inv_ctx);
-            break;
-
-        case FAST_FIXED:
-        case FAST_MIXED:
-            fwd_ctx->out_seq = ntt_recursive(fwd_ctx->size, 0, fwd_ctx->in_seq, fwd_ctx);
-            inv_ctx->in_seq = fwd_ctx->out_seq;
-            inv_ctx->out_seq = ntt_recursive(inv_ctx->size, 0, inv_ctx->in_seq, inv_ctx);
-            break;
-
-        case FAST_FIXED_INPLACE:
-            ntt_inplace(fwd_ctx);
-            inv_ctx->in_seq = fwd_ctx->out_seq;
-            ntt_inplace(inv_ctx);
-            break;
-    }
+#if NTT_TYPE == TYPE_MTX
+    ntt_mtx(fwd_ctx);
+    inv_ctx->in_seq = fwd_ctx->out_seq;
+    ntt_mtx(inv_ctx);
+#elif NTT_TYPE == TYPE_N2_1
+    ntt_n_squared(fwd_ctx);
+    inv_ctx->in_seq = fwd_ctx->out_seq;
+    ntt_n_squared(inv_ctx);
+#elif NTT_TYPE == TYPE_N2_2
+    ntt_n_squared_2(fwd_ctx);
+    inv_ctx->in_seq = fwd_ctx->out_seq;
+    ntt_n_squared_2(inv_ctx);
+#elif NTT_TYPE == TYPE_N2_3
+    ntt_n_squared_3(fwd_ctx);
+    inv_ctx->in_seq = fwd_ctx->out_seq;
+    ntt_n_squared_3(inv_ctx);
+#elif NTT_TYPE == TYPE_FAST_FIXED || NTT_TYPE == TYPE_FAST_MIXED
+    fwd_ctx->out_seq = ntt_recursive(fwd_ctx->size, 0, fwd_ctx->in_seq, fwd_ctx);
+    inv_ctx->in_seq = fwd_ctx->out_seq;
+    inv_ctx->out_seq = ntt_recursive(inv_ctx->size, 0, inv_ctx->in_seq, inv_ctx);
+#elif NTT_TYPE == TYPE_FAST_FIXED_INPLACE
+    ntt_inplace(fwd_ctx);
+    inv_ctx->in_seq = fwd_ctx->out_seq;
+    ntt_inplace(inv_ctx);
+#elif NTT_TYPE == TYPE_FAST_MIXED_INPLACE
+    ntt_inplace_mixed_radix(fwd_ctx);
+    inv_ctx->in_seq = fwd_ctx->out_seq;
+    ntt_inplace_mixed_radix(inv_ctx);
+#endif
         
+#if CHECK_STACK
+    printf("Max stack size: %ld\n", g_peak_stack_size);
+#endif
     int *orig_arr = fwd_ctx->in_seq;
     int *final_arr = inv_ctx->out_seq;
     int inv_n = modinv(fwd_ctx->size, fwd_ctx->mod);
