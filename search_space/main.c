@@ -1,6 +1,10 @@
 #include <time.h>
 #include "ntt.h"
 
+#if DO_TIME
+#include <sys/time.h>
+#endif
+
 /*
 static const int Ns[NUM_SUPPORTED_LENGTHS] = {4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384};
 static const int Ms[NUM_SUPPORTED_LENGTHS] = {17, 17, 97, 193, 257, 257, 7681, 12289, 12289, 12289, 40961, 65537, 65537};
@@ -46,7 +50,18 @@ int main() {
         in_seq_fwd[i] = i;
     }
     fwd_ctx.in_seq = in_seq_fwd;
-    if (!ntt_check(&fwd_ctx, &inv_ctx)) {
+#if DO_TIME
+    struct timeval start, end;
+    double elapsed_time;
+    gettimeofday(&start, NULL);
+    int check_res = ntt_check(&fwd_ctx, &inv_ctx);
+    gettimeofday(&end, NULL);
+    elapsed_time = (end.tv_sec - start.tv_sec)*1e6 + (end.tv_usec - start.tv_usec);
+    printf("TIME: %0.0f us\n", elapsed_time);
+#else
+    int check_res = ntt_check(&fwd_ctx, &inv_ctx);
+#endif
+    if (!check_res) {
         #if FAIL_PRINT_INFO
         printf("FWD IN:\n");
         for (int i = 0; i < DIM; i++) {
