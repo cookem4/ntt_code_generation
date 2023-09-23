@@ -17,18 +17,25 @@ int main() {
     srand(time(NULL));
 
     ntt_ctx fwd_ctx, inv_ctx;
+    // Expand dimension via padding for non-power-of-2 for fast
+    // ntt with fixed radix of 2
+#if NTT_TYPE == TYPE_FAST_FIXED || NTT_TYPE == TYPE_FAST_FIXED_INPLACE
+    fwd_ctx.size = 1<<clog2(DIM);
+    inv_ctx.size = 1<<clog2(DIM);
+#else
     fwd_ctx.size = DIM;
     inv_ctx.size = DIM;
+#endif
     // Get the prime factors for this dimension
-    fwd_ctx.prime_factors = get_prime_factors(DIM, &fwd_ctx.prime_factor_size);
+    fwd_ctx.prime_factors = get_prime_factors(fwd_ctx.size, &fwd_ctx.prime_factor_size);
     inv_ctx.prime_factors = fwd_ctx.prime_factors;
     inv_ctx.prime_factor_size = fwd_ctx.prime_factor_size;
-    get_ntt_params(DIM, &fwd_ctx.mod, &fwd_ctx.w);
+    get_ntt_params(fwd_ctx.size, &fwd_ctx.mod, &fwd_ctx.w);
     inv_ctx.mod = fwd_ctx.mod;
     inv_ctx.w = modinv(fwd_ctx.w, fwd_ctx.mod);
     fwd_ctx.type = NTT_TYPE;
     inv_ctx.type = NTT_TYPE;
-    printf("Runing NTT type %d, N = %d, mod = %d, g = %d, ginv = %d\n", NTT_TYPE, DIM, fwd_ctx.mod, fwd_ctx.w, inv_ctx.w);
+    printf("Runing NTT type %d, N = %d, mod = %d, g = %d, ginv = %d\n", NTT_TYPE, fwd_ctx.size, fwd_ctx.mod, fwd_ctx.w, inv_ctx.w);
     if (fwd_ctx.type == FAST_MIXED) {
         printf("Prime factors: ");
         for (int i = 0; i < fwd_ctx.prime_factor_size-1; i++) {
@@ -44,8 +51,8 @@ int main() {
     fwd_ctx.barrett_r = ((1 << fwd_ctx.barrett_k)/fwd_ctx.mod);
     inv_ctx.barrett_k = fwd_ctx.barrett_k;
     inv_ctx.barrett_r = fwd_ctx.barrett_r;
-    int in_seq_fwd[DIM];
-    for (int i = 0; i < DIM; i++) {
+    int in_seq_fwd[fwd_ctx.size];
+    for (int i = 0; i < fwd_ctx.size; i++) {
         // in_seq_fwd[i] = rand() % fwd_ctx.mod;
         in_seq_fwd[i] = i;
     }
@@ -64,15 +71,15 @@ int main() {
     if (!check_res) {
         #if FAIL_PRINT_INFO
         printf("FWD IN:\n");
-        for (int i = 0; i < DIM; i++) {
+        for (int i = 0; i < fwd_ctx.size; i++) {
             printf("%d, ", fwd_ctx.in_seq[i]);
         }
         printf("\nFWD OUT:\n");
-        for (int i = 0; i < DIM; i++) {
+        for (int i = 0; i < fwd_ctx.size; i++) {
             printf("%d, ", fwd_ctx.out_seq[i]);
         }
         printf("\nINV(FWD):\n");
-        for (int i = 0; i < DIM; i++) {
+        for (int i = 0; i < fwd_ctx.size; i++) {
             printf("%d, ", inv_ctx.out_seq[i]);
         }
         printf("\n FAIL\n");

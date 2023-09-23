@@ -178,7 +178,7 @@ int fqmul(int a, int b, ntt_ctx *ctx) {
 // As matrtix by vector multiplication with NTT matrix. Worst Case since we
 // store the matrix
 #if NTT_TYPE == TYPE_MTX
-void ntt_mtx(ntt_ctx * ctx) {
+void ntt_impl(ntt_ctx * ctx) {
   int *nttmtx  = malloc(ctx->size * ctx->size * sizeof(int));
   int *r  = malloc(ctx->size * sizeof(int));
   int *s  = malloc(ctx->size * sizeof(int));
@@ -205,7 +205,7 @@ void ntt_mtx(ntt_ctx * ctx) {
 
 // Super simple but inefficient
 #if NTT_TYPE == TYPE_N2_1
-void ntt_n_squared(ntt_ctx * ctx) {
+void ntt_impl(ntt_ctx * ctx) {
   int *r  = malloc(ctx->size * sizeof(int));
   int *s  = malloc(ctx->size * sizeof(int));
   for (int i = 0; i < ctx->size; i++) {
@@ -227,7 +227,7 @@ void ntt_n_squared(ntt_ctx * ctx) {
 
 // Re-use power computations
 #if NTT_TYPE == TYPE_N2_2
-void ntt_n_squared_2(ntt_ctx * ctx) {
+void ntt_impl(ntt_ctx * ctx) {
   int *r  = malloc(ctx->size * sizeof(int));
   int *s  = malloc(ctx->size * sizeof(int));
   int twiddle = 1;
@@ -254,7 +254,7 @@ void ntt_n_squared_2(ntt_ctx * ctx) {
 
 // Use barrett reduction instead of mod
 #if NTT_TYPE == TYPE_N2_3
-void ntt_n_squared_3(ntt_ctx * ctx) {
+void ntt_impl(ntt_ctx * ctx) {
   int *r  = malloc(ctx->size * sizeof(int));
   int *s  = malloc(ctx->size * sizeof(int));
   int twiddle = 1;
@@ -281,7 +281,7 @@ void ntt_n_squared_3(ntt_ctx * ctx) {
 
 // Simplest recursive implementation, not in place
 #if NTT_TYPE == TYPE_FAST_FIXED || NTT_TYPE == TYPE_FAST_MIXED
-int * ntt_recursive(int size, int recursive_cnt, int *x, ntt_ctx * ctx) {
+int * ntt_impl(int size, int recursive_cnt, int *x, ntt_ctx * ctx) {
 #if CHECK_STACK
     profile_stack();
 #endif
@@ -314,7 +314,7 @@ int * ntt_recursive(int size, int recursive_cnt, int *x, ntt_ctx * ctx) {
         // Recursive calls
         recursive_cnt++;
         for (int i = 0; i < n1; i++) {
-            y_sub[i] = ntt_recursive(n2, recursive_cnt, x_sub[i], ctx);
+            y_sub[i] = ntt_impl(n2, recursive_cnt, x_sub[i], ctx);
         }
         // Butterfly back into original array
         for (int i = 0; i < size; i++) {
@@ -335,7 +335,7 @@ int * ntt_recursive(int size, int recursive_cnt, int *x, ntt_ctx * ctx) {
 #endif
 
 #if NTT_TYPE == TYPE_FAST_FIXED_INPLACE
-void ntt_inplace(ntt_ctx * ctx) {
+void ntt_impl(ntt_ctx * ctx) {
     int *x = ctx->in_seq;
     int t1, t2;
     int twiddle1, twiddle2;
@@ -362,7 +362,7 @@ void ntt_inplace(ntt_ctx * ctx) {
 #endif
 
 #if NTT_TYPE == TYPE_FAST_MIXED_INPLACE
-void ntt_inplace_mixed_radix(ntt_ctx * ctx) {
+void ntt_impl(ntt_ctx * ctx) {
     int *x = ctx->in_seq;
     int t;
     int twiddle;
@@ -405,33 +405,33 @@ void ntt_inplace_mixed_radix(ntt_ctx * ctx) {
 int ntt_check(ntt_ctx *fwd_ctx, ntt_ctx *inv_ctx) {
 
 #if NTT_TYPE == TYPE_MTX
-    ntt_mtx(fwd_ctx);
+    ntt_impl(fwd_ctx);
     inv_ctx->in_seq = fwd_ctx->out_seq;
-    ntt_mtx(inv_ctx);
+    ntt_impl(inv_ctx);
 #elif NTT_TYPE == TYPE_N2_1
-    ntt_n_squared(fwd_ctx);
+    ntt_impl(fwd_ctx);
     inv_ctx->in_seq = fwd_ctx->out_seq;
-    ntt_n_squared(inv_ctx);
+    ntt_impl(inv_ctx);
 #elif NTT_TYPE == TYPE_N2_2
-    ntt_n_squared_2(fwd_ctx);
+    ntt_impl(fwd_ctx);
     inv_ctx->in_seq = fwd_ctx->out_seq;
-    ntt_n_squared_2(inv_ctx);
+    ntt_impl(inv_ctx);
 #elif NTT_TYPE == TYPE_N2_3
-    ntt_n_squared_3(fwd_ctx);
+    ntt_impl(fwd_ctx);
     inv_ctx->in_seq = fwd_ctx->out_seq;
-    ntt_n_squared_3(inv_ctx);
+    ntt_impl(inv_ctx);
 #elif NTT_TYPE == TYPE_FAST_FIXED || NTT_TYPE == TYPE_FAST_MIXED
-    fwd_ctx->out_seq = ntt_recursive(fwd_ctx->size, 0, fwd_ctx->in_seq, fwd_ctx);
+    fwd_ctx->out_seq = ntt_impl(fwd_ctx->size, 0, fwd_ctx->in_seq, fwd_ctx);
     inv_ctx->in_seq = fwd_ctx->out_seq;
-    inv_ctx->out_seq = ntt_recursive(inv_ctx->size, 0, inv_ctx->in_seq, inv_ctx);
+    inv_ctx->out_seq = ntt_impl(inv_ctx->size, 0, inv_ctx->in_seq, inv_ctx);
 #elif NTT_TYPE == TYPE_FAST_FIXED_INPLACE
-    ntt_inplace(fwd_ctx);
+    ntt_impl(fwd_ctx);
     inv_ctx->in_seq = fwd_ctx->out_seq;
-    ntt_inplace(inv_ctx);
+    ntt_impl(inv_ctx);
 #elif NTT_TYPE == TYPE_FAST_MIXED_INPLACE
-    ntt_inplace_mixed_radix(fwd_ctx);
+    ntt_impl(fwd_ctx);
     inv_ctx->in_seq = fwd_ctx->out_seq;
-    ntt_inplace_mixed_radix(inv_ctx);
+    ntt_impl(inv_ctx);
 #endif
         
 #if CHECK_STACK
