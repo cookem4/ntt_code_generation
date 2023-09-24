@@ -30,6 +30,23 @@ int main() {
 #endif
     // Get the prime factors for this dimension
     fwd_ctx.prime_factors = get_prime_factors(fwd_ctx.size, &fwd_ctx.prime_factor_size);
+#if NTT_TYPE == TYPE_FAST_MIXED_MR5_INPLACE
+    // Pad sequence until largest factor is less than or equal to 5
+    int largest_prime_fact;
+    do {
+        largest_prime_fact = fwd_ctx.prime_factors[0];
+        for (int i = 1; i < fwd_ctx.prime_factor_size; i++) {
+            if (largest_prime_fact < fwd_ctx.prime_factors[i]) {
+                largest_prime_fact = fwd_ctx.prime_factors[i];
+            }
+        }
+        if (largest_prime_fact > 5) {
+            fwd_ctx.size++;
+            inv_ctx.size++;
+            fwd_ctx.prime_factors = get_prime_factors(fwd_ctx.size, &fwd_ctx.prime_factor_size);
+        }
+    } while (largest_prime_fact > 5);
+#endif
     inv_ctx.prime_factors = fwd_ctx.prime_factors;
     inv_ctx.prime_factor_size = fwd_ctx.prime_factor_size;
     get_ntt_params(fwd_ctx.size, &fwd_ctx.mod, &fwd_ctx.w);
@@ -37,14 +54,12 @@ int main() {
     inv_ctx.w = modinv(fwd_ctx.w, fwd_ctx.mod);
     fwd_ctx.type = NTT_TYPE;
     inv_ctx.type = NTT_TYPE;
-    printf("Runing NTT type %d, N = %d, mod = %d, g = %d, ginv = %d\n", NTT_TYPE, fwd_ctx.size, fwd_ctx.mod, fwd_ctx.w, inv_ctx.w);
-    if (fwd_ctx.type == FAST_MIXED) {
-        printf("Prime factors: ");
-        for (int i = 0; i < fwd_ctx.prime_factor_size-1; i++) {
-            printf("%d, ", fwd_ctx.prime_factors[i]);
-        }
-        printf("%d\n", fwd_ctx.prime_factors[fwd_ctx.prime_factor_size-1]);
+    printf("Running NTT type %d, N = %d, mod = %d, g = %d, ginv = %d\n", NTT_TYPE, fwd_ctx.size, fwd_ctx.mod, fwd_ctx.w, inv_ctx.w);
+    printf("Prime factors: ");
+    for (int i = 0; i < fwd_ctx.prime_factor_size-1; i++) {
+        printf("%d, ", fwd_ctx.prime_factors[i]);
     }
+    printf("%d\n", fwd_ctx.prime_factors[fwd_ctx.prime_factor_size-1]);
     fwd_ctx.recursive_base_size = RECURSIVE_BASE;
     inv_ctx.recursive_base_size = RECURSIVE_BASE;
     fwd_ctx.recursive_dec_size = RECURSIVE_DECIMATION;

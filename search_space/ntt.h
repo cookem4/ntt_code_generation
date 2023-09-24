@@ -9,12 +9,6 @@
 // #define NTT_TYPE FAST
 // #define DIM 512
 
-// For both mixed and fixed radix
-#define RECURSIVE_BASE 2
-
-// TODO for fixed radix
-#define RECURSIVE_DECIMATION 2
-
 #define FAIL_PRINT_INFO 1
 
 #define DO_TIME 1
@@ -31,6 +25,10 @@
 #define TYPE_FAST_FIXED_INPLACE_LUT 8
 #define TYPE_FAST_MIXED_INPLACE_LUT 9
 #define TYPE_N2_4_LUT 10
+#define TYPE_FAST_MIXED_MR5_INPLACE 11
+
+#define RECURSIVE_BASE 2
+#define RECURSIVE_DECIMATION 2
 
 // Not used exclusing fast and fast mixed to share recursive func
 typedef enum {

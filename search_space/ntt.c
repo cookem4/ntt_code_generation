@@ -397,7 +397,7 @@ void ntt_impl(ntt_ctx * ctx) {
 }
 #endif
 
-#if NTT_TYPE == TYPE_FAST_MIXED_INPLACE || NTT_TYPE == TYPE_FAST_MIXED_INPLACE_LUT
+#if NTT_TYPE == TYPE_FAST_MIXED_INPLACE || NTT_TYPE == TYPE_FAST_MIXED_INPLACE_LUT || NTT_TYPE == TYPE_FAST_MIXED_MR5_INPLACE
 void ntt_impl(ntt_ctx * ctx) {
     int *x = ctx->in_seq;
     int t;
@@ -421,7 +421,7 @@ void ntt_impl(ntt_ctx * ctx) {
                 for (int butterfly_i = 0; butterfly_i < ctx->prime_factors[fact_cnt]; butterfly_i++) {
                     for (int butterfly_j = 0; butterfly_j < ctx->prime_factors[fact_cnt]; butterfly_j++) {
                         dst_idx = n1*n_cur + ni + butterfly_i*n2;
-#if NTT_TYPE == TYPE_FAST_FIXED_INPLACE
+#if NTT_TYPE == TYPE_FAST_FIXED_INPLACE || NTT_TYPE == TYPE_FAST_MIXED_MR5_INPLACE
                         x[dst_idx] =  barrett_reduce(x[dst_idx] + x_t[butterfly_j] *
                                       a_pow_b_mod_m(ctx->w, ((n_cur/ctx->size)*ni*butterfly_j + (butterfly_i * ctx->size/ctx->prime_factors[fact_cnt]))
                                       % ctx->size, ctx->mod), ctx);
@@ -447,31 +447,11 @@ void ntt_impl(ntt_ctx * ctx) {
 
 int ntt_check(ntt_ctx *fwd_ctx, ntt_ctx *inv_ctx) {
 
-#if NTT_TYPE == TYPE_MTX
-    ntt_impl(fwd_ctx);
-    inv_ctx->in_seq = fwd_ctx->out_seq;
-    ntt_impl(inv_ctx);
-#elif NTT_TYPE == TYPE_N2_1
-    ntt_impl(fwd_ctx);
-    inv_ctx->in_seq = fwd_ctx->out_seq;
-    ntt_impl(inv_ctx);
-#elif NTT_TYPE == TYPE_N2_2
-    ntt_impl(fwd_ctx);
-    inv_ctx->in_seq = fwd_ctx->out_seq;
-    ntt_impl(inv_ctx);
-#elif NTT_TYPE == TYPE_N2_3
-    ntt_impl(fwd_ctx);
-    inv_ctx->in_seq = fwd_ctx->out_seq;
-    ntt_impl(inv_ctx);
-#elif NTT_TYPE == TYPE_N2_4_LUT
-    ntt_impl(fwd_ctx);
-    inv_ctx->in_seq = fwd_ctx->out_seq;
-    ntt_impl(inv_ctx);
-#elif NTT_TYPE == TYPE_FAST_FIXED || NTT_TYPE == TYPE_FAST_MIXED
+#if NTT_TYPE == TYPE_FAST_FIXED || NTT_TYPE == TYPE_FAST_MIXED
     fwd_ctx->out_seq = ntt_impl(fwd_ctx->size, 0, fwd_ctx->in_seq, fwd_ctx);
     inv_ctx->in_seq = fwd_ctx->out_seq;
     inv_ctx->out_seq = ntt_impl(inv_ctx->size, 0, inv_ctx->in_seq, inv_ctx);
-#elif NTT_TYPE == TYPE_FAST_FIXED_INPLACE || NTT_TYPE == TYPE_FAST_FIXED_INPLACE_LUT || NTT_TYPE == TYPE_FAST_MIXED_INPLACE || NTT_TYPE == TYPE_FAST_MIXED_INPLACE_LUT
+#else
     ntt_impl(fwd_ctx);
     inv_ctx->in_seq = fwd_ctx->out_seq;
     ntt_impl(inv_ctx);
