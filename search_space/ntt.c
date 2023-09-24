@@ -405,8 +405,10 @@ void ntt_impl(ntt_ctx * ctx) {
     int n_cur = ctx->size;
     int orig_size = ctx->size;
     int fact_cnt = 0;
+    int n2 = n_cur/ctx->prime_factors[fact_cnt];
     int dst_idx;
-    for (int n2 = n_cur/ctx->prime_factors[fact_cnt]; n2 > 1; n2 /= (ctx->prime_factors[fact_cnt])) { // log n
+    // for (int n2 = n_cur/ctx->prime_factors[fact_cnt]; n2 >= 1; n2 /= (ctx->prime_factors[fact_cnt])) { // log n
+    while (1) { // Iterates over prime factors. Termination at bottom of loop
         // For each of the "sub-transforms" in the CT butterfly
         for (int n1 = 0; n1 < orig_size/n_cur; n1++) {
             // We take steps within our sub transform
@@ -421,7 +423,7 @@ void ntt_impl(ntt_ctx * ctx) {
                 for (int butterfly_i = 0; butterfly_i < ctx->prime_factors[fact_cnt]; butterfly_i++) {
                     for (int butterfly_j = 0; butterfly_j < ctx->prime_factors[fact_cnt]; butterfly_j++) {
                         dst_idx = n1*n_cur + ni + butterfly_i*n2;
-#if NTT_TYPE == TYPE_FAST_FIXED_INPLACE || NTT_TYPE == TYPE_FAST_MIXED_MR5_INPLACE
+#if NTT_TYPE == TYPE_FAST_MIXED_INPLACE || NTT_TYPE == TYPE_FAST_MIXED_MR5_INPLACE
                         x[dst_idx] =  barrett_reduce(x[dst_idx] + x_t[butterfly_j] *
                                       a_pow_b_mod_m(ctx->w, ((n_cur/ctx->size)*ni*butterfly_j + (butterfly_i * ctx->size/ctx->prime_factors[fact_cnt]))
                                       % ctx->size, ctx->mod), ctx);
@@ -439,6 +441,10 @@ void ntt_impl(ntt_ctx * ctx) {
         // Size for next iter
         n_cur = n2;
         fact_cnt++;
+        if (fact_cnt >= ctx->prime_factor_size) {
+            break;
+        }
+        n2 /= (ctx->prime_factors[fact_cnt]); // Logn
     }
     ctx->out_seq = x;
 }
