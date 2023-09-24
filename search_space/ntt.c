@@ -154,15 +154,6 @@ int modinv(int a, int m) {
     return t;
 }
 
-int montgomery_reduce(int a, ntt_ctx *ctx)
-{
-  int t;
-
-  t = a*ctx->qinv;
-  t = (a - t*ctx->mod) >> 16;
-  return t;
-}
-
 int barrett_reduce(int a, ntt_ctx *ctx) {
   long int q, t;
   q = ((long int) a*ctx->barrett_r) >> ctx->barrett_k;
@@ -171,9 +162,24 @@ int barrett_reduce(int a, ntt_ctx *ctx) {
   return (int) t;
 }
 
-int fqmul(int a, int b, ntt_ctx *ctx) {
-  return montgomery_reduce(a*b, ctx);
+#if NTT_TYPE == TYPE_N2_4_LUT || NTT_TYPE == TYPE_FAST_FIXED_INPLACE_LUT || NTT_TYPE == TYPE_FAST_MIXED_INPLACE_LUT
+static int * g_gen_pows;
+static int * g_inv_gen_pows;
+
+void populate_pows_lut(ntt_ctx * fwd_ctx, ntt_ctx * inv_ctx) {
+    g_gen_pows = malloc(DIM * sizeof(int));
+    g_inv_gen_pows = malloc(DIM * sizeof(int));
+    int cur_g = 1;
+    int cur_g_inv = 1;
+    for (int i = 0; i < DIM; i++) {
+        g_gen_pows[i] = cur_g;
+        g_inv_gen_pows[i] = cur_g_inv;
+        cur_g = barrett_reduce(cur_g * fwd_ctx->w, fwd_ctx);
+        cur_g_inv = barrett_reduce(cur_g_inv * inv_ctx->w, inv_ctx);
+    }
 }
+
+#endif
 
 // As matrtix by vector multiplication with NTT matrix. Worst Case since we
 // store the matrix
@@ -279,6 +285,27 @@ void ntt_impl(ntt_ctx * ctx) {
 }
 #endif
 
+// Lookup powers instead of using a_pow_b_mod_m
+#if NTT_TYPE == TYPE_N2_4_LUT
+void ntt_impl(ntt_ctx * ctx) {
+  int *r  = malloc(ctx->size * sizeof(int));
+  int *s  = malloc(ctx->size * sizeof(int));
+  for (int i = 0; i < ctx->size; i++) {
+      r[i] = ctx->in_seq[i];
+      s[i] = 0;
+  }
+  for (int i = 0; i < ctx->size; i++) {
+      for (int j = 0; j < ctx->size; j++) {
+          s[i] = barrett_reduce(s[i] + r[j] * (ctx->is_fwd ? g_gen_pows[i*j % ctx->size] : g_inv_gen_pows[i*j % ctx->size]), ctx);
+      }
+  }
+  ctx->out_seq = s;
+  for (int i = 0; i < ctx->size; i++) {
+      s[i] = s[i] < 0 ? s[i] + ctx->mod : s[i];
+  }
+}
+#endif
+
 // Simplest recursive implementation, not in place
 #if NTT_TYPE == TYPE_FAST_FIXED || NTT_TYPE == TYPE_FAST_MIXED
 int * ntt_impl(int size, int recursive_cnt, int *x, ntt_ctx * ctx) {
@@ -334,14 +361,18 @@ int * ntt_impl(int size, int recursive_cnt, int *x, ntt_ctx * ctx) {
 }
 #endif
 
-#if NTT_TYPE == TYPE_FAST_FIXED_INPLACE
+#if NTT_TYPE == TYPE_FAST_FIXED_INPLACE || NTT_TYPE == TYPE_FAST_FIXED_INPLACE_LUT
 void ntt_impl(ntt_ctx * ctx) {
     int *x = ctx->in_seq;
     int t1, t2;
     int twiddle1, twiddle2;
     int cur_size;
     int cur_idx;
+#if NTT_TYPE == TYPE_FAST_FIXED_INPLACE
     int half_rot = a_pow_b_mod_m(ctx->w, ctx->size/2, ctx->mod);
+#else // LUT
+    int half_rot = ctx->is_fwd ? g_gen_pows[ctx->size/2] : g_inv_gen_pows[ctx->size/2];
+#endif
     for (int stride = ctx->size>>1; stride >= 1; stride >>= 1) { // log n
         cur_size = stride<<1;
         // For each of the "sub-transforms" in the CT butterfly
@@ -349,9 +380,14 @@ void ntt_impl(ntt_ctx * ctx) {
             // We take steps within our sub transform
             for (int step = 0; step < stride; step++) {
                 cur_idx = sub_trans_idx*cur_size + step;
+#if NTT_TYPE == TYPE_FAST_FIXED_INPLACE
                 twiddle1 = a_pow_b_mod_m(ctx->w, sub_trans_idx*(stride) % ctx->size, ctx->mod);
                 // Twiddle 2 is offset half a rotation from twiddle 1
                 twiddle2 = barrett_reduce(twiddle1 * half_rot, ctx);
+#else // LUT
+                twiddle1 = ctx->is_fwd ? g_gen_pows[(sub_trans_idx*stride) % ctx->size] : g_inv_gen_pows[(sub_trans_idx*stride) % ctx->size];
+                twiddle2 = ctx->is_fwd ? g_gen_pows[(sub_trans_idx*stride + ctx->size/2) % ctx->size] : g_inv_gen_pows[(sub_trans_idx*stride + ctx->size/2) % ctx->size];
+#endif
                 x[cur_idx + stride] = barrett_reduce(x[cur_idx] + x[cur_idx + stride] * twiddle2, ctx);
                 x[cur_idx] = barrett_reduce(x[cur_idx] + x[cur_idx + stride] * twiddle1, ctx);
             }
@@ -361,7 +397,7 @@ void ntt_impl(ntt_ctx * ctx) {
 }
 #endif
 
-#if NTT_TYPE == TYPE_FAST_MIXED_INPLACE
+#if NTT_TYPE == TYPE_FAST_MIXED_INPLACE || NTT_TYPE == TYPE_FAST_MIXED_INPLACE_LUT
 void ntt_impl(ntt_ctx * ctx) {
     int *x = ctx->in_seq;
     int t;
@@ -385,9 +421,16 @@ void ntt_impl(ntt_ctx * ctx) {
                 for (int butterfly_i = 0; butterfly_i < ctx->prime_factors[fact_cnt]; butterfly_i++) {
                     for (int butterfly_j = 0; butterfly_j < ctx->prime_factors[fact_cnt]; butterfly_j++) {
                         dst_idx = n1*n_cur + ni + butterfly_i*n2;
+#if NTT_TYPE == TYPE_FAST_FIXED_INPLACE
                         x[dst_idx] =  barrett_reduce(x[dst_idx] + x_t[butterfly_j] *
                                       a_pow_b_mod_m(ctx->w, ((n_cur/ctx->size)*ni*butterfly_j + (butterfly_i * ctx->size/ctx->prime_factors[fact_cnt]))
                                       % ctx->size, ctx->mod), ctx);
+#else // LUT
+                        x[dst_idx] =  barrett_reduce(x[dst_idx] + x_t[butterfly_j] *
+                                      (ctx->is_fwd ?     g_gen_pows[((n_cur/ctx->size)*ni*butterfly_j + (butterfly_i * ctx->size/ctx->prime_factors[fact_cnt])) % ctx->size]
+                                                  : g_inv_gen_pows[((n_cur/ctx->size)*ni*butterfly_j + (butterfly_i * ctx->size/ctx->prime_factors[fact_cnt])) % ctx->size]),
+                                      ctx);
+#endif
                     }
                 }
                 free(x_t);
@@ -420,15 +463,15 @@ int ntt_check(ntt_ctx *fwd_ctx, ntt_ctx *inv_ctx) {
     ntt_impl(fwd_ctx);
     inv_ctx->in_seq = fwd_ctx->out_seq;
     ntt_impl(inv_ctx);
+#elif NTT_TYPE == TYPE_N2_4_LUT
+    ntt_impl(fwd_ctx);
+    inv_ctx->in_seq = fwd_ctx->out_seq;
+    ntt_impl(inv_ctx);
 #elif NTT_TYPE == TYPE_FAST_FIXED || NTT_TYPE == TYPE_FAST_MIXED
     fwd_ctx->out_seq = ntt_impl(fwd_ctx->size, 0, fwd_ctx->in_seq, fwd_ctx);
     inv_ctx->in_seq = fwd_ctx->out_seq;
     inv_ctx->out_seq = ntt_impl(inv_ctx->size, 0, inv_ctx->in_seq, inv_ctx);
-#elif NTT_TYPE == TYPE_FAST_FIXED_INPLACE
-    ntt_impl(fwd_ctx);
-    inv_ctx->in_seq = fwd_ctx->out_seq;
-    ntt_impl(inv_ctx);
-#elif NTT_TYPE == TYPE_FAST_MIXED_INPLACE
+#elif NTT_TYPE == TYPE_FAST_FIXED_INPLACE || NTT_TYPE == TYPE_FAST_FIXED_INPLACE_LUT || NTT_TYPE == TYPE_FAST_MIXED_INPLACE || NTT_TYPE == TYPE_FAST_MIXED_INPLACE_LUT
     ntt_impl(fwd_ctx);
     inv_ctx->in_seq = fwd_ctx->out_seq;
     ntt_impl(inv_ctx);

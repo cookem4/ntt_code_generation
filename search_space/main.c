@@ -17,6 +17,8 @@ int main() {
     srand(time(NULL));
 
     ntt_ctx fwd_ctx, inv_ctx;
+    fwd_ctx.is_fwd = 1;
+    inv_ctx.is_fwd = 0;
     // Expand dimension via padding for non-power-of-2 for fast
     // ntt with fixed radix of 2
 #if NTT_TYPE == TYPE_FAST_FIXED || NTT_TYPE == TYPE_FAST_FIXED_INPLACE
@@ -51,6 +53,9 @@ int main() {
     fwd_ctx.barrett_r = ((1 << fwd_ctx.barrett_k)/fwd_ctx.mod);
     inv_ctx.barrett_k = fwd_ctx.barrett_k;
     inv_ctx.barrett_r = fwd_ctx.barrett_r;
+#if NTT_TYPE == TYPE_N2_4_LUT || NTT_TYPE == TYPE_FAST_FIXED_INPLACE_LUT || NTT_TYPE == TYPE_FAST_MIXED_INPLACE_LUT
+    populate_pows_lut(&fwd_ctx, &inv_ctx);
+#endif
     int in_seq_fwd[fwd_ctx.size];
     for (int i = 0; i < fwd_ctx.size; i++) {
         // in_seq_fwd[i] = rand() % fwd_ctx.mod;

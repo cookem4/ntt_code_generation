@@ -36,11 +36,15 @@ def main():
     PROG_NAME = "./ntt_test" 
     # DIM_LST = range(4, 500, 10) + range(600, 2000, 100) + range(2500, 10500,1000) 
     # DIM_LST = range(4, 500, 10) + range(600, 2000, 100) 
-    small_range = range(10, 1000, 10) 
-    large_range = range(1000, 5100, 100)
-    DIM_LST = list(small_range) + list(large_range)
+    large_range = range(8, 6000, 2)
+    DIM_LST = list(large_range)
 
-    NTT_TYPE_LST = ["TYPE_MTX", "TYPE_N2_1", "TYPE_N2_2", "TYPE_N2_3", "TYPE_FAST_FIXED", "TYPE_FAST_MIXED", "TYPE_FAST_FIXED_INPLACE", "TYPE_FAST_MIXED_INPLACE"] 
+    # Original List
+    # NTT_TYPE_LST = ["TYPE_MTX", "TYPE_N2_1", "TYPE_N2_2", "TYPE_N2_3", "TYPE_FAST_FIXED", "TYPE_FAST_MIXED", "TYPE_FAST_FIXED_INPLACE", "TYPE_FAST_MIXED_INPLACE"] 
+    # Expanded List
+    # NTT_TYPE_LST = ["TYPE_MTX", "TYPE_N2_1", "TYPE_N2_2", "TYPE_N2_3", "TYPE_FAST_FIXED", "TYPE_FAST_MIXED", "TYPE_FAST_FIXED_INPLACE", "TYPE_FAST_MIXED_INPLACE", "TYPE_FAST_FIXED_INPLACE_LUT", "TYPE_FAST_MIXED_INPLACE_LUT", "TYPE_N2_4_LUT"] 
+    # Only new items
+    NTT_TYPE_LST = ["TYPE_FAST_FIXED_INPLACE_LUT", "TYPE_FAST_MIXED_INPLACE_LUT", "TYPE_N2_4_LUT"] 
     bash_command_base = "make clean && make CFLAGS=\"-O2" 
  
     ntt_type_objs = [] 

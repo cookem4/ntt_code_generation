@@ -28,6 +28,9 @@
 #define TYPE_FAST_MIXED 5
 #define TYPE_FAST_FIXED_INPLACE 6
 #define TYPE_FAST_MIXED_INPLACE 7
+#define TYPE_FAST_FIXED_INPLACE_LUT 8
+#define TYPE_FAST_MIXED_INPLACE_LUT 9
+#define TYPE_N2_4_LUT 10
 
 // Not used exclusing fast and fast mixed to share recursive func
 typedef enum {
@@ -48,6 +51,7 @@ typedef struct {
     int barrett_k;
     int barrett_r;
     int w;
+    int is_fwd;
     int recursive_base_size;
     int recursive_dec_size;
     NTT_TYPE_t type;
@@ -66,5 +70,6 @@ void get_ntt_params(int n, int * mod, int * g);
 int * get_prime_factors(int n, int *prime_factor_size);
 int clog2(long int in);
 void sort(int *x, size_t size);
+void populate_pows_lut(ntt_ctx *, ntt_ctx *);
 
 #endif // NTT_H
