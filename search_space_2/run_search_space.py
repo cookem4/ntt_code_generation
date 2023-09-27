@@ -56,8 +56,13 @@ def main():
     # attributes
     NTT_TYPE = "TYPE_N2"
     for is_lut in [0, 1]:
-        for is_parallel in [0, 1]:
-            new_data_obj = Ntt_Data(NTT_TYPE, is_lut, 0, 1, is_parallel) 
+        # TODO temp skip non-lut parallelization for failures
+        if is_lut == 1:
+            for is_parallel in [0, 1]:
+                new_data_obj = Ntt_Data(NTT_TYPE, is_lut, 0, 1, is_parallel) 
+                ntt_objs.append(new_data_obj) 
+        else:
+            new_data_obj = Ntt_Data(NTT_TYPE, is_lut, 0, 1, 0) 
             ntt_objs.append(new_data_obj) 
     NTT_TYPE = "TYPE_FAST"
     for is_lut in [0, 1]:
@@ -101,7 +106,7 @@ def main():
             # valgrind --tool=cachegrind,massif,callgrind 
             # Can then run callgrind_annotate or ms_print for the given callgrind log 
  
-            bash_command = "valgrind --tool=massif " + PROG_NAME 
+            bash_command = "valgrind --tool=massif --stacks=yes " + PROG_NAME 
             output = run_bash_cmd(bash_command) 
             # Parse the massif output 
             bash_command = "ls massif* | xargs -I {} ms_print {}" 
@@ -122,15 +127,19 @@ def main():
             bash_command = "rm massif*" 
             output = run_bash_cmd(bash_command) 
  
-            bash_command = "valgrind --tool=callgrind " + PROG_NAME 
-            output = run_bash_cmd(bash_command) 
-            # Parse the massif output 
-            bash_command = "ls callgrind* | xargs -I {} callgrind_annotate {}" 
-            output = run_bash_cmd(bash_command) 
-            matches = re.findall(r"([\d,]+).*ntt_impl", output)
-            ntt_obj.ir_cnt_y.append(int(matches[0].replace(",","")))
-            bash_command = "rm callgrind*" 
-            output = run_bash_cmd(bash_command) 
+            # Skip callgrind if openMP
+            if (ntt_obj.is_parallel == 0):
+                bash_command = "valgrind --tool=callgrind " + PROG_NAME 
+                output = run_bash_cmd(bash_command) 
+                # Parse the massif output 
+                bash_command = "ls callgrind* | xargs -I {} callgrind_annotate {}" 
+                output = run_bash_cmd(bash_command) 
+                matches = re.findall(r"([\d,]+).*ntt_impl", output)
+                ntt_obj.ir_cnt_y.append(int(matches[0].replace(",","")))
+                bash_command = "rm callgrind*" 
+                output = run_bash_cmd(bash_command) 
+            else:
+                ntt_obj.ir_cnt_y.append(int(0))
  
             # Check code size in B 
             bash_command = "size ntt.o" 

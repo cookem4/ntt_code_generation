@@ -162,7 +162,8 @@ void ntt_impl(ntt_ctx * ctx) {
       twiddle = 1;
       for (int j = 0; j < ctx->size; j++) {
           twiddle = j == 0 ? 1 : barrett_reduce(twiddle * twiddle_fact, ctx);
-          s[i] = barrett_reduce(s[i] + r[j] * twiddle, ctx);
+          int temp = barrett_reduce(r[j] * twiddle, ctx);
+          s[i] = s[i] + temp > ctx->mod ? s[i] + temp - ctx->mod : s[i] + temp;
       }
       // Increase twiddle factor
       twiddle_fact = barrett_reduce(twiddle_fact * ctx->w, ctx);
