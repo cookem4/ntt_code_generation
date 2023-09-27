@@ -106,10 +106,16 @@ def main():
             # valgrind --tool=cachegrind,massif,callgrind 
             # Can then run callgrind_annotate or ms_print for the given callgrind log 
  
-            bash_command = "valgrind --tool=massif --stacks=yes " + PROG_NAME 
+            bash_command = "valgrind --tool=massif " + PROG_NAME 
             output = run_bash_cmd(bash_command) 
             # Parse the massif output 
             bash_command = "ls massif* | xargs -I {} ms_print {}" 
+            # TEMP:
+            # 4,192 -> LUT
+            # 3,152 -> NO LUT
+            # 9,312 -> NO LUT 512
+            # 13,424 -> LUT 512
+            # 5,200 -> LUT 512 R2
             output = run_bash_cmd(bash_command) 
             massif_pattern = r"(\d+)\s+([\d,]+)\s+([\d,]+)\s+([\d,]+)\s+([\d,]+)\s+([\d,]+)"
             # The last line looks like this:
@@ -122,12 +128,16 @@ def main():
             # We want the total(B) argument
             matches = re.findall(massif_pattern, output)
             # We care about third match, but want the max across the snapshots
-            peak_match = re.findall("([\d,]+)B.*ntt_impl", output)
-            if (len(peak_match == 0)):
-                # Peak too small to be detected
-                ntt_obj.heap_y.append(0)
-            else:
-                ntt_obj.heap_y.append(peak_match[0])
+            # peak_match = re.findall("([\d,]+)B.*ntt_impl", output)
+            # ntt_obj.heap_y.append(peak_match[0])
+            peak_match = re.findall("(\d+)\s+\(peak\)", output)
+            # ntt_obj.heap_y.append(int(matches[int(peak_match[0])][2].replace(",","")))
+            # Find max manually 
+            this_max = int(matches[0][2].replace(",","")) 
+            for i in matches[1:-1]: 
+                if int(i[2].replace(",","")) > this_max: 
+                    this_max = int(i[2].replace(",","")) 
+            ntt_obj.heap_y.append(this_max)
             bash_command = "rm massif*" 
             output = run_bash_cmd(bash_command) 
  
