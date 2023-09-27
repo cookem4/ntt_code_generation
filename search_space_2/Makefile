@@ -22,7 +22,7 @@ $(EXEC): $(OBJ)
 
 # Compile source files to object files
 %.o: %.c
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(CC) -fopenmp $(CFLAGS) -c $< -o $@
 
 # Clean up object files and executable
 clean:

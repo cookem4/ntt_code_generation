@@ -119,7 +119,6 @@ def main():
             # We care about third match, but want the max across the snapshots
             peak_match = re.findall("([\d,]+)B.*ntt_impl", output)
             ntt_obj.heap_y.append(peak_match[0])
-            pdb.set_trace()
             bash_command = "rm massif*" 
             output = run_bash_cmd(bash_command) 
  
