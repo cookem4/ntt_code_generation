@@ -84,6 +84,7 @@ def main():
             bash_command_build = bash_command_build + " -D" + ntt_obj.max_mixed_radix_build_str + "=" + str(ntt_obj.max_mixed_radix)
             bash_command_build = bash_command_build + " -D" + ntt_obj.is_parallel_build_str     + "=" + str(ntt_obj.is_parallel)
             bash_command = bash_command_build + "\"" 
+            print(bash_command)
             # Compile the program 
             output = run_bash_cmd(bash_command) 
             # Run the program 
@@ -116,14 +117,9 @@ def main():
             # We want the total(B) argument
             matches = re.findall(massif_pattern, output)
             # We care about third match, but want the max across the snapshots
-            peak_match = re.findall("(\d+)\s+\(peak\)", output)
-            # ntt_obj.heap_y.append(int(matches[int(peak_match[0])][2].replace(",","")))
-            # Find max manually 
-            this_max = int(matches[0][2].replace(",","")) 
-            for i in matches[1:-1]: 
-                if int(i[2].replace(",","")) > this_max: 
-                    this_max = int(i[2].replace(",","")) 
-            ntt_obj.heap_y.append(this_max)
+            peak_match = re.findall("([\d,]+)B.*ntt_impl", output)
+            ntt_obj.heap_y.append(peak_match[0])
+            pdb.set_trace()
             bash_command = "rm massif*" 
             output = run_bash_cmd(bash_command) 
  

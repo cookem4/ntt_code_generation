@@ -2,12 +2,33 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import subprocess
 
-# Original List
-# NTT_TYPE_LST = ["TYPE_MTX", "TYPE_N2_1", "TYPE_N2_2", "TYPE_N2_3", "TYPE_FAST_FIXED", "TYPE_FAST_MIXED", "TYPE_FAST_FIXED_INPLACE", "TYPE_FAST_MIXED_INPLACE"] 
-# Expanded List
-NTT_TYPE_LST = ["TYPE_MTX", "TYPE_N2_1", "TYPE_N2_2", "TYPE_N2_3", "TYPE_FAST_FIXED", "TYPE_FAST_MIXED", "TYPE_FAST_FIXED_INPLACE", "TYPE_FAST_MIXED_INPLACE", "TYPE_FAST_FIXED_INPLACE_LUT", "TYPE_FAST_MIXED_INPLACE_LUT", "TYPE_N2_4_LUT", "TYPE_FAST_MIXED_MR5_INPLACE"] 
-# Only new items
-# NTT_TYPE_LST = ["TYPE_FAST_FIXED_INPLACE_LUT", "TYPE_FAST_MIXED_INPLACE_LUT", "TYPE_N2_4_LUT"] 
+# Data container 
+class Ntt_Data: 
+    dim_build_str = "DIM"
+    type_build_str = "NTT_TYPE"
+    is_lut_build_str = "LUT_BASED"
+    fixed_radix_build_str = "FAST_FIXED"
+    mixed_radix_build_str = "FAST_MIXED"
+    max_mixed_radix_build_str = "FAST_MIXED"
+    max_mixed_radix_build_str = "MAX_RADIX"
+    is_parallel_build_str = "PARALLEL"
+    def __init__(self, type_str, is_lut, fixed_radix, max_mixed_radix, is_parallel): 
+        self.type_str = type_str 
+        self.is_lut = is_lut 
+        self.fixed_radix = fixed_radix 
+        self.mixed_radix = 1 if fixed_radix == 0 else 0
+        self.max_mixed_radix = max_mixed_radix 
+        self.is_parallel = is_parallel 
+        self.dim_data_x = [] 
+        self.runtime_y = [] 
+        self.heap_y = [] 
+        self.ir_cnt_y = [] 
+        self.stack_height_y = [] 
+        self.code_size_B_y = [] 
+        self.func_size_B_y = [] 
+        self.prog_output = [] 
+        self.exec_status_y = [] # Pass/fail 
+        self.fname = str(self.type_str) + "_LUT" + str(self.is_lut)  + "_F" + str(self.fixed_radix) + "_MR" + str(self.max_mixed_radix) + "_P" + str(self.is_parallel) + "_data_sweep.csv"
 
 def run_bash_cmd(bash_command): 
     try: 
@@ -37,8 +58,8 @@ def plot_set(dir_name, legend):
         plt.title(f" {column} vs. Dim")
         plt.grid(True)
         for ntt_type in legend:
-            df = pd.read_csv(ntt_type + "_data_sweep.csv")
-            #plt.plot(df["Dim"], df[column], marker='o', linestyle='-', label=ntt_type)
+
+            df = pd.read_csv(ntt_type.fname)
             plt.plot(df["Dim"], df[column], linestyle='-', label=ntt_type)
         plt.legend()
         plt.savefig(folder_path + dir_name + "_" + column.replace(" ","") + ".png", dpi=300, bbox_inches='tight')
@@ -47,34 +68,47 @@ def plot_set(dir_name, legend):
 # Define the columns to plot against "Dim"
 columns_to_plot = ["Runtime", "Heap", "IR Cnt", "Code Size B", "Func Size B"]
 
-for ntt_type in NTT_TYPE_LST:
-    # Load the CSV file into a pandas DataFrame
-    df = pd.read_csv(ntt_type + "_data_sweep.csv")
+# Build the same NTT object list as in the run script
+mixed_radix_range = [3, 5, 7, 11, 13]
+ntt_objs = [] 
+# Cross product of search space creates a set of NTT objects with certain
+# attributes
+NTT_TYPE = "TYPE_N2"
+for is_lut in [0, 1]:
+    for is_parallel in [0, 1]:
+        new_data_obj = Ntt_Data(NTT_TYPE, is_lut, 0, 1, is_parallel) 
+        ntt_objs.append(new_data_obj) 
+NTT_TYPE = "TYPE_FAST"
+for is_lut in [0, 1]:
+    for is_fixed_radix in [0, 1]:
+        # Skip if is N2
+        if (is_fixed_radix == 1):
+            new_data_obj = Ntt_Data(NTT_TYPE, is_lut, 1, 2, 0) 
+            ntt_objs.append(new_data_obj) 
+        else:
+            for max_mixed_radix in mixed_radix_range:
+                new_data_obj = Ntt_Data(NTT_TYPE, is_lut, 0, max_mixed_radix, 0) 
+                ntt_objs.append(new_data_obj) 
 
-    folder_path = ntt_type + "_FIGS/"
+for ntt_type in ntt_objs:
+    # Load the CSV file into a pandas DataFrame
+    df = pd.read_csv(ntt_type.fname)
+    ntt_name = ntt_type.fname.replace("_data_sweep.csv", "")
+    folder_path = ntt_name + "_FIGS/"
     bash_cmd = "[ ! -d " + folder_path + " ] && mkdir " + folder_path + " || echo"
     run_bash_cmd(bash_cmd)
 
     # Create a line graph for each column
     for column in columns_to_plot:
         plt.figure(figsize=(8, 6))  # Set the figure size
-        plt.plot(df["Dim"], df[column], marker='o', linestyle='-', label=column)
+        plt.plot(df["Dim"].astype(int), df[column].astype(int), linestyle='-', label=column)
         plt.xlabel("Dim")
         plt.ylabel(column)
-        plt.title(ntt_type + f" {column} vs. Dim")
+        plt.title(ntt_name + f" {column} vs. Dim")
         plt.grid(True)
         plt.legend()
-        plt.savefig(folder_path + ntt_type + "_" + column.replace(" ","") + ".png", dpi=300, bbox_inches='tight')
+        plt.savefig(folder_path + ntt_name + "_" + column.replace(" ","") + ".png", dpi=300, bbox_inches='tight')
         plt.close()
 
 
-plot_set("ALL", NTT_TYPE_LST)
-plot_set("QUADRATIC", NTT_TYPE_LST[0:4] + [NTT_TYPE_LST[10]])
-plot_set("LINEARITHMIC", NTT_TYPE_LST[4:8] + [NTT_TYPE_LST[-1]])
-plot_set("N2", NTT_TYPE_LST[1:4])
-plot_set("N2_2_3", NTT_TYPE_LST[2:4])
-plot_set("N2_3_4", [NTT_TYPE_LST[3], NTT_TYPE_LST[10]])
-plot_set("RECURSIVE", NTT_TYPE_LST[4:6])
-plot_set("INPLACE", NTT_TYPE_LST[6:8])
-plot_set("LUT", NTT_TYPE_LST[8:10])
-plot_set("MR", ["TYPE_FAST_MIXED_INPLACE", "TYPE_FAST_MIXED_MR5_INPLACE"])
+# plot_set("ALL", ntt_objs)
