@@ -202,18 +202,25 @@ void ntt_impl(ntt_ctx * ctx) {
     int cur_idx;
 #if LUT_BASED == 0
     int half_rot = a_pow_b_mod_m(ctx->w, ctx->size/2, ctx->mod);
+    int stride_twiddle;
+    int running_twiddle_1;
 #else // LUT
     int half_rot = ctx->is_fwd ? g_gen_pows[ctx->size/2] : g_inv_gen_pows[ctx->size/2];
 #endif
     for (int stride = ctx->size>>1; stride >= 1; stride >>= 1) { // log n
         cur_size = stride<<1;
+#if LUT_BASED == 0
+        stride_twiddle = a_pow_b_mod_m(ctx->w, stride, ctx->mod);
+        running_twiddle_1 = 1;
+#endif
         // For each of the "sub-transforms" in the CT butterfly
         for (int sub_trans_idx = 0; sub_trans_idx < ctx->size/cur_size; sub_trans_idx++) {
             // We take steps within our sub transform
             for (int step = 0; step < stride; step++) {
                 cur_idx = sub_trans_idx*cur_size + step;
 #if LUT_BASED == 0
-                twiddle1 = a_pow_b_mod_m(ctx->w, sub_trans_idx*(stride) % ctx->size, ctx->mod);
+                twiddle1 = running_twiddle_1;
+                running_twiddle_1 = barrett_reduce(stride_twiddle * running_twiddle_1, ctx);
                 // Twiddle 2 is offset half a rotation from twiddle 1
                 twiddle2 = barrett_reduce(twiddle1 * half_rot, ctx);
 #else // LUT
@@ -239,10 +246,22 @@ void ntt_impl(ntt_ctx * ctx) {
     int fact_cnt = 0;
     int n2 = n_cur/ctx->prime_factors[fact_cnt];
     int dst_idx;
+#if LUT_BASED == 0
+    int base_j_1; // With n_cur/ctx->size
+    int running_pow_j_2; // With above ^ni
+    int running_pow_j_3; // With above ^butterfly_j
+    int base_i_1; // With ctx->size/ctx->prime_factors[fact_cnt]
+    int running_pow_i_2; // With above ^butterfly_i
+#endif
     // for (int n2 = n_cur/ctx->prime_factors[fact_cnt]; n2 >= 1; n2 /= (ctx->prime_factors[fact_cnt])) { // log n
     while (1) { // Iterates over prime factors. Termination at bottom of loop
         // For each of the "sub-transforms" in the CT butterfly
         for (int n1 = 0; n1 < orig_size/n_cur; n1++) {
+#if LUT_BASED == 0
+            base_j_1 = a_pow_b_mod_m(ctx->w, n_cur/ctx->size, ctx->mod);
+            base_i_1 = a_pow_b_mod_m(ctx->w, n_cur/ctx->prime_factors[fact_cnt], ctx->mod);
+            running_pow_j_2 = 1;
+#endif
             // We take steps within our sub transform
             for (int ni = 0; ni < n2; ni++) {
                 int *x_t = calloc(ctx->prime_factors[fact_cnt], sizeof(int));
@@ -252,13 +271,25 @@ void ntt_impl(ntt_ctx * ctx) {
                 }
                 // We have N^2 terms to add where N is the prime factor
                 // Since N sums into each N node of the sub transform
+#if LUT_BASED == 0
+                running_pow_i_2 = 1;
+#endif
                 for (int butterfly_i = 0; butterfly_i < ctx->prime_factors[fact_cnt]; butterfly_i++) {
+#if LUT_BASED == 0
+                    running_pow_j_3 = 1;
+#endif
                     for (int butterfly_j = 0; butterfly_j < ctx->prime_factors[fact_cnt]; butterfly_j++) {
                         dst_idx = n1*n_cur + ni + butterfly_i*n2;
 #if LUT_BASED == 0
+                        /*
                         x[dst_idx] =  barrett_reduce(x[dst_idx] + x_t[butterfly_j] *
                                       a_pow_b_mod_m(ctx->w, ((n_cur/ctx->size)*ni*butterfly_j + (butterfly_i * ctx->size/ctx->prime_factors[fact_cnt]))
                                       % ctx->size, ctx->mod), ctx);
+                                      */
+                        int red1 = barrett_reduce(running_pow_j_3 * running_pow_i_2, ctx);
+                        int red2 = barrett_reduce(red2 * x_t[butterfly_j], ctx);
+                        x[dst_idx] =  barrett_reduce(x[dst_idx] + red2, ctx);
+                        running_pow_j_3 = barrett_reduce(running_pow_j_3 * running_pow_j_2, ctx);
 #else // LUT
                         x[dst_idx] =  barrett_reduce(x[dst_idx] + x_t[butterfly_j] *
                                       (ctx->is_fwd ?     g_gen_pows[((n_cur/ctx->size)*ni*butterfly_j + (butterfly_i * ctx->size/ctx->prime_factors[fact_cnt])) % ctx->size]
@@ -266,9 +297,15 @@ void ntt_impl(ntt_ctx * ctx) {
                                       ctx);
 #endif
                     }
+#if LUT_BASED == 0
+                    running_pow_i_2 = barrett_reduce(running_pow_i_2 * base_i_1, ctx);
+#endif
                 }
                 free(x_t);
             }
+#if LUT_BASED == 0
+            running_pow_j_2 = barrett_reduce(running_pow_j_2 * base_j_1, ctx);
+#endif
         }
         // Size for next iter
         n_cur = n2;
