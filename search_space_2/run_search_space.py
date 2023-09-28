@@ -88,6 +88,8 @@ def main():
             bash_command_build = bash_command_build + " -D" + ntt_obj.mixed_radix_build_str     + "=" + str(ntt_obj.mixed_radix)
             bash_command_build = bash_command_build + " -D" + ntt_obj.max_mixed_radix_build_str + "=" + str(ntt_obj.max_mixed_radix)
             bash_command_build = bash_command_build + " -D" + ntt_obj.is_parallel_build_str     + "=" + str(ntt_obj.is_parallel)
+            if (ntt_obj.is_parallel == 1):
+                bash_command_build = bash_command_build + " -fopenmp "
             bash_command = bash_command_build + "\"" 
             print(bash_command)
             # Compile the program 
@@ -170,13 +172,17 @@ def main():
             ntt_obj.func_size_B_y.append(func_size)
  
             # Check runtime with flag 
+            NUM_TIME_RERUN = 10
+            running_sum = 0;
             bash_command_build = bash_command_build + " -DDO_TIME=1 \"" 
             # Compile with timing 
             output = run_bash_cmd(bash_command_build) 
-            # Execute 
-            output = run_bash_cmd(PROG_NAME) 
-            matches = re.findall(r"TIME\:\s+(\d+)\s+us", output)
-            ntt_obj.runtime_y.append(int(matches[0]))
+            for i in range(NUM_TIME_RERUN):
+                # Execute 
+                output = run_bash_cmd(PROG_NAME) 
+                matches = re.findall(r"TIME\:\s+(\d+)\s+us", output)
+                running_sum = running_sum + int(matches[0])
+            ntt_obj.runtime_y.append(running_sum / NUM_TIME_RERUN)
 
             # Write collected data to the CSV file so we don't lose it if
             # there's a runtime error

@@ -75,8 +75,13 @@ ntt_objs = []
 # attributes
 NTT_TYPE = "TYPE_N2"
 for is_lut in [0, 1]:
-    for is_parallel in [0, 1]:
-        new_data_obj = Ntt_Data(NTT_TYPE, is_lut, 0, 1, is_parallel) 
+    # TODO temp skip non-lut parallelization for failures
+    if is_lut == 1:
+        for is_parallel in [0, 1]:
+            new_data_obj = Ntt_Data(NTT_TYPE, is_lut, 0, 1, is_parallel) 
+            ntt_objs.append(new_data_obj) 
+    else:
+        new_data_obj = Ntt_Data(NTT_TYPE, is_lut, 0, 1, 0) 
         ntt_objs.append(new_data_obj) 
 NTT_TYPE = "TYPE_FAST"
 for is_lut in [0, 1]:

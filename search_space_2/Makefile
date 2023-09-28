@@ -18,11 +18,11 @@ all: $(EXEC)
 
 # Build the executable
 $(EXEC): $(OBJ)
-	$(CC) -fopenmp $(CFLAGS) -o $@ $(OBJ)
+	$(CC) $(CFLAGS) -o $@ $(OBJ)
 
 # Compile source files to object files
 %.o: %.c
-	$(CC) -fopenmp $(CFLAGS) -c $< -o $@
+	$(CC) $(CFLAGS) -c $< -o $@
 
 # Clean up object files and executable
 clean:

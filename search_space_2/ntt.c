@@ -1,5 +1,56 @@
 #include "ntt.h" 
 
+// TODO this is useless -> memory is reported in pages which is huge for this
+// use-case
+#if DO_HEAP == 1
+
+#include <unistd.h>
+#include <string.h>
+
+size_t g_start_heap;
+size_t g_peak_heap;
+
+void get_heap() {
+    FILE *fp;
+
+    // Open the /proc/self/statm file for reading
+    fp = fopen("/proc/self/statm", "r");
+
+    if (fp == NULL) {
+        perror("Error opening /proc/self/statm");
+    }
+
+    // Read the contents of the file
+    char buffer[256];  // Adjust the buffer size as needed
+    long page_size = sysconf(_SC_PAGESIZE);
+    if (fgets(buffer, sizeof(buffer), fp) != NULL) {
+        // Split the content into fields based on spaces
+        char *token;
+        token = strtok(buffer, " ");
+
+        // The second field (index 1) represents the RSS, which includes the heap size
+        if (token != NULL) {
+            token = strtok(NULL, " "); // Move to the second field
+            if (token != NULL) {
+                // Convert the RSS value to an integer (heap size in pages)
+                int rss = atoi(token);
+
+                // Calculate the heap size in bytes
+                size_t heapSizeBytes = rss * page_size;
+
+                printf("Heap Size: %lu bytes\n", heapSizeBytes);
+            }
+        }
+    } else {
+        perror("Error reading /proc/self/statm");
+    }
+
+    // Close the file
+    fclose(fp);
+}
+
+#endif
+
 // Comparison function for qsort
 int compare(const void *a, const void *b) {
     // Cast the void pointers to the correct data type (int*)
@@ -154,7 +205,6 @@ void ntt_impl(ntt_ctx * ctx) {
       r[i] = ctx->in_seq[i];
       s[i] = 0;
   }
-
   #if PARALLEL == 1
   #pragma omp parallel for
   #endif
