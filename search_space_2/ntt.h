@@ -54,5 +54,6 @@ int * get_prime_factors(int n, int *prime_factor_size);
 int clog2(long int in);
 void sort(int *x, size_t size);
 void populate_pows_lut(ntt_ctx *, ntt_ctx *);
+void init_cache(void);
 
 #endif // NTT_H

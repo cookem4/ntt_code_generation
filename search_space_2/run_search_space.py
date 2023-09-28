@@ -112,12 +112,6 @@ def main():
             output = run_bash_cmd(bash_command) 
             # Parse the massif output 
             bash_command = "ls massif* | xargs -I {} ms_print {}" 
-            # TEMP:
-            # 4,192 -> LUT
-            # 3,152 -> NO LUT
-            # 9,312 -> NO LUT 512
-            # 13,424 -> LUT 512
-            # 5,200 -> LUT 512 R2
             output = run_bash_cmd(bash_command) 
             massif_pattern = r"(\d+)\s+([\d,]+)\s+([\d,]+)\s+([\d,]+)\s+([\d,]+)\s+([\d,]+)"
             # The last line looks like this:

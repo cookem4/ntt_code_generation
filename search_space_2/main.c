@@ -58,6 +58,8 @@ int main() {
     inv_ctx.barrett_r = fwd_ctx.barrett_r;
 #if LUT_BASED == 1
     populate_pows_lut(&fwd_ctx, &inv_ctx);
+#elif CACHE_BASED == 1
+    init_cache();
 #endif
     int in_seq_fwd[fwd_ctx.size];
     for (int i = 0; i < fwd_ctx.size; i++) {

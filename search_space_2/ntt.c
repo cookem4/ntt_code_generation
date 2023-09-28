@@ -194,15 +194,30 @@ void populate_pows_lut(ntt_ctx * fwd_ctx, ntt_ctx * inv_ctx) {
 }
 #endif
 
+#if CACHE_BASED == 1
+
+static int * g_gen_pows_cache;
+static char * g_cache_pow_idx; // Small Tag
+
+// Place cache on heap based on DIM
+void init_cache() {
+    g_gen_pows_cache = malloc((DIM/CACHE_RATIO) * sizeof(int));
+    g_cache_pow_idx = malloc((DIM/CACHE_RATIO) * sizeof(char));
+    // Init tags to -1
+    for (int i = 0; i < DIM/CACHE_RATIO; i++) {
+        g_cache_pow_idx[i] = -1;
+    }
+}
+
+#endif
+
 // Use barrett reduction instead of mod
-#if NTT_TYPE == TYPE_N2 && LUT_BASED == 0
+#if NTT_TYPE == TYPE_N2 && LUT_BASED == 0 && CACHE_BASED == 0
 void ntt_impl(ntt_ctx * ctx) {
-  int *r  = malloc(ctx->size * sizeof(int));
   int *s  = malloc(ctx->size * sizeof(int));
   int twiddle = 1;
   int twiddle_fact = 1; // Geometrically increasing factor in each loop iteration
   for (int i = 0; i < ctx->size; i++) {
-      r[i] = ctx->in_seq[i];
       s[i] = 0;
   }
   #if PARALLEL == 1
@@ -212,7 +227,7 @@ void ntt_impl(ntt_ctx * ctx) {
       twiddle = 1;
       for (int j = 0; j < ctx->size; j++) {
           twiddle = j == 0 ? 1 : barrett_reduce(twiddle * twiddle_fact, ctx);
-          int temp = barrett_reduce(r[j] * twiddle, ctx);
+          int temp = barrett_reduce(ctx->in_seq[j] * twiddle, ctx);
           s[i] = s[i] + temp > ctx->mod ? s[i] + temp - ctx->mod : s[i] + temp;
       }
       // Increase twiddle factor
@@ -225,10 +240,8 @@ void ntt_impl(ntt_ctx * ctx) {
 // Lookup powers instead of using a_pow_b_mod_m
 #if NTT_TYPE == TYPE_N2 && LUT_BASED == 1
 void ntt_impl(ntt_ctx * ctx) {
-  int *r  = malloc(ctx->size * sizeof(int));
   int *s  = malloc(ctx->size * sizeof(int));
   for (int i = 0; i < ctx->size; i++) {
-      r[i] = ctx->in_seq[i];
       s[i] = 0;
   }
   #if PARALLEL == 1
@@ -236,14 +249,50 @@ void ntt_impl(ntt_ctx * ctx) {
   #endif
   for (int i = 0; i < ctx->size; i++) {
       for (int j = 0; j < ctx->size; j++) {
-          s[i] = barrett_reduce(s[i] + r[j] * (ctx->is_fwd ? g_gen_pows[i*j % ctx->size] : g_inv_gen_pows[i*j % ctx->size]), ctx);
+          s[i] = barrett_reduce(s[i] + ctx->in_seq[j] * (ctx->is_fwd ? g_gen_pows[i*j % ctx->size] : g_inv_gen_pows[i*j % ctx->size]), ctx);
       }
   }
   ctx->out_seq = s;
 }
 #endif
 
+// Use associative cache
+#if NTT_TYPE == TYPE_N2 && CACHE_BASED == 1
+void ntt_impl(ntt_ctx * ctx) {
+  int *s  = malloc(ctx->size * sizeof(int));
+  int twiddle = 1;
+  int twiddle_fact = 1; // Geometrically increasing factor in each loop iteration
+  int tag = 0;
+  int hit = 0;
+  for (int i = 0; i < ctx->size; i++) {
+      s[i] = 0;
+  }
+  #if PARALLEL == 1
+  #pragma omp parallel for
+  #endif
+  for (int i = 0; i < ctx->size; i++) {
+      twiddle = 1;
+      for (int j = 0; j < ctx->size; j++) {
+          tag = (i*j % DIM/CACHE_RATIO);
+          hit = g_cache_pow_idx[tag] == (i*j % DIM);
+          if (!hit) {
+              // TODO check for a hit on neighbour below?
+              // TODO check hits from all neighbours then get shortest distance?
+              g_gen_pows_cache[tag] = a_pow_b_mod_m(ctx->w, i*j % DIM, ctx->mod);
+              g_cache_pow_idx[tag] = i*j % DIM;
+          }
+          int temp = barrett_reduce(ctx->in_seq[j] * g_gen_pows_cache[tag], ctx);
+          s[i] = s[i] + temp > ctx->mod ? s[i] + temp - ctx->mod : s[i] + temp;
+      }
+      // Increase twiddle factor
+      twiddle_fact = barrett_reduce(twiddle_fact * ctx->w, ctx);
+  }
+  ctx->out_seq = s;
+}
+#endif
+
 // Fixed radix only
+// TODO worth doing a base-case N2 expansion? Could be parallelized
 #if NTT_TYPE == TYPE_FAST && FAST_FIXED == 1
 void ntt_impl(ntt_ctx * ctx) {
     int *x = ctx->in_seq;
@@ -255,7 +304,7 @@ void ntt_impl(ntt_ctx * ctx) {
     int half_rot = a_pow_b_mod_m(ctx->w, ctx->size/2, ctx->mod);
     int stride_twiddle;
     int running_twiddle_1;
-#else // LUT
+#else
     int half_rot = ctx->is_fwd ? g_gen_pows[ctx->size/2] : g_inv_gen_pows[ctx->size/2];
 #endif
     for (int stride = ctx->size>>1; stride >= 1; stride >>= 1) { // log n
@@ -374,6 +423,12 @@ void ntt_impl(ntt_ctx * ctx) {
 int ntt_check(ntt_ctx *fwd_ctx, ntt_ctx *inv_ctx) {
 
     ntt_impl(fwd_ctx);
+    // Reset tags
+#if CACHE_BASED == 1
+    for (int i = 0; i < DIM/CACHE_RATIO; i++) {
+        g_cache_pow_idx[i] = -1;
+    }
+#endif
     inv_ctx->in_seq = fwd_ctx->out_seq;
     ntt_impl(inv_ctx);
         
