@@ -13,6 +13,10 @@ class Ntt_Source:
     # Substring $SUB_*$ indicates substitution, where the string following
     # $SUB_ is the variable name to substitute from the namespace
 
+    c_test_name = "test_target.c"
+    c_target_name = "ntt_target.c"
+    h_target_name = "ntt_target.h"
+
     c_ntt_impl_func_proto = \
             """
             void ntt_impl(int *x, int *y) {
@@ -219,6 +223,53 @@ class Ntt_Source:
             }
             """
 
+    def generate_target(self):
+        # Use search space point to create code
 
-    def __init__(self, search_space_point):
+        # Write header file constants
+        with open(h_target_name, "w") as file:
+            file.write("#ifndef NTT_H\n#define NTT_H\n")
+            file.write("void ntt_impl(int *x, int *y);\n")
+            if self.search_space_point.is_parallel:
+                file.write("#include <omp.h>\n")
+            file.write("#endif // NTT_H")
+
+        # Write test file
+        with open(c_test_name, "w") as file:
+            file.write("#include \"ntt.h\"\n")
+            temp_str = \
+                    """
+                    #include <stdlib.h>
+                    #if DO_TIME
+                    #include <sys/time.h>
+                    #endif
+                    """
+            file.write(temp_str)
+            file.write ("\n\nint main() {\n")
+            temp_str = \
+                    """
+                    srand(time(NULL));
+                    """
+            file.write(temp_str)
+            temp_str = \
+                   f"""
+                    int *x_fwd = malloc({self.ntt_parameters.n} * sizeof(int));
+                    int *y_fwd = calloc({self.ntt_parameters.n}, sizeof(int));
+                    int *y_inv = calloc({self.ntt_parameters.n}, sizeof(int));
+                    for (int i 0; i < {self.ntt_parameters.n}; i++) {
+                        x_fwd[i] = rand() % {self.ntt_parameters.mod};
+                    }
+                    """
+
+        # Write source file constants
+        with open(c_target_name, "w") as file:
+            if self.search_space_point.type_str == "TYPE_N2":
+
+            else: # TYPE_FAST
+
+        # Write test file constants
+
+    def __init__(self, search_space_point, ntt_parameters):
         self.search_space_point = search_space_point
+        self.ntt_parameters = ntt_parameters
+

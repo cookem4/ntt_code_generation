@@ -61,11 +61,16 @@ def main(args):
     is_inv = bool(args.inverse)
     
     code_gen = Code_Gen_Params(dimension, max_heap_size, max_code_size, num_threads, max_stack_size, max_mem_footprint)
-    ntt_params = ntt_params.NTT_Params(dimension, is_inv)
+    ntt_parameters = nt.NTT_Params(dimension, is_inv)
 
     # The entire search space. Don't want to traverse all of it
     # Use optimization algorithm to navigate to a "good" spot
-    search_space = search_space.build_search_space()
+    search_space = ss.build_search_space()
+
+    for seach_space_point in seach_space:
+        code_gen_point = ns.NTT_Source(seach_space_point, ntt_parameters)
+        # Call code gen
+        code_gen_point.generate_target()
 
     
 if __name__ == "__main__":
