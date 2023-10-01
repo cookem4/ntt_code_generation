@@ -26,19 +26,6 @@ import search_space as ss
 # Leverage inline assembly
 # AVX instructions
 
-def run_bash_cmd(bash_command): 
-    try: 
-        # Run the command and capture the output and error 
-        output = subprocess.check_output(bash_command, shell=True, universal_newlines=True, stderr=subprocess.STDOUT) 
-         
-        # Print the output 
-        # print(output) 
-        return output 
-    except subprocess.CalledProcessError as e: 
-        # If the command returns a non-zero exit code, it will raise a CalledProcessError 
-        print(f"Command failed with exit code {e.returncode}:") 
-        print(e.output) 
-
 # Just a container for parameters
 class Code_Gen_Params: 
     def __init__(self, dimension, max_heap_size, max_code_size, num_threads, max_stack_size, max_mem_footprint):
@@ -58,10 +45,9 @@ def main(args):
     max_stack_size = int(args.stack)
     dimension = int(args.dimension)
     max_mem_footprint = int(args.memory)
-    is_inv = bool(args.inverse)
     
     code_gen = Code_Gen_Params(dimension, max_heap_size, max_code_size, num_threads, max_stack_size, max_mem_footprint)
-    ntt_parameters = nt.NTT_Params(dimension, is_inv)
+    ntt_parameters = nt.NTT_Params(dimension)
 
     # The entire search space. Don't want to traverse all of it
     # Use optimization algorithm to navigate to a "good" spot
@@ -69,10 +55,16 @@ def main(args):
 
     # TODO for testing purposes should also be able to test a single point
 
+    code_gen_inst = ns.Ntt_Source(search_space[0], ntt_parameters)
+    code_gen_inst.generate_target()
+    search_space[0].run_test_suite()
+
+    '''
     for seach_space_point in seach_space:
         code_gen_point = ns.NTT_Source(seach_space_point, ntt_parameters)
         # Call code gen
         code_gen_point.generate_target()
+    '''
 
     
 if __name__ == "__main__":
@@ -85,7 +77,6 @@ if __name__ == "__main__":
     parser.add_argument("-s", "--stack")
     parser.add_argument("-d", "--dimension")
     parser.add_argument("-m", "--memory")
-    parser.add_argument("-i", "--inverse", action='store_true')
     
     args = parser.parse_args()
     main(args)

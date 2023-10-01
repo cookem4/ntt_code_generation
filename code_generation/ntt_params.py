@@ -16,21 +16,16 @@ class NTT_Params:
                 fact += 1
         self.prime_factorization = sorted(self.prime_factorization)
 
-    def __init__(self, dimension, inv):
+    def __init__(self, dimension):
         self.n = dimension
         self.g, self.mod = get_ntt_params(self.n)
-        self.inv = inv
         self.g_inv = modinv(self.g, self.mod)
         self.set_prime_factorization()
-        self.barrett_k = 2*math.ceiling(math.log2(self.mod));
+        self.barrett_k = 2*math.ceil(math.log2(self.mod));
         self.barrett_r = ((1 << self.barrett_k) // self.mod);
         # For power reduction in the case of LUT
-        self.barrett_k_pow = 2*math.ceiling(math.log2(self.n));
+        self.barrett_k_pow = 2*math.ceil(math.log2(self.n));
         self.barrett_r_pow = ((1 << self.barrett_k_pow) // self.n);
-        # Invert generator for inverse transform
-        if (self.inv):
-            self.g = modinv(self.g, self.mod)
-
 
 def is_prime(n):
     if (n & 1 == 0):

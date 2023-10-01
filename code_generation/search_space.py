@@ -1,5 +1,7 @@
+
+import subprocess
+
 class Search_Space: 
-    dim_build_str = "DIM"
     type_build_str = "NTT_TYPE"
     is_lut_build_str = "LUT_BASED"
     fixed_radix_build_str = "FAST_FIXED"
@@ -16,24 +18,46 @@ class Search_Space:
     total_mem = 0
     runtime = 0
 
+    def run_bash_cmd(self, bash_command): 
+        try: 
+            # Run the command and capture the output and error 
+            output = subprocess.check_output(bash_command, shell=True, universal_newlines=True, stderr=subprocess.STDOUT) 
+             
+            # Print the output 
+            # print(output) 
+            return output 
+        except subprocess.CalledProcessError as e: 
+            # If the command returns a non-zero exit code, it will raise a CalledProcessError 
+            print(f"Command failed with exit code {e.returncode}:") 
+            print(e.output) 
+
     # TODO worth collecting cache hit data?
     def run_test_suite(self):
         PROG_NAME = "./ntt_test" 
-        bash_command_base = "make clean && make CFLAGS=\"-O2" 
-        bash_command_build = bash_command_base  + " -D" + self.dim_build_str             + "=" + str(dim)
-        bash_command_build = bash_command_build + " -D" + self.type_build_str            + "=" + str(self.type_str)
-        bash_command_build = bash_command_build + " -D" + self.is_lut_build_str          + "=" + str(self.is_lut)
-        bash_command_build = bash_command_build + " -D" + self.fixed_radix_build_str     + "=" + str(self.fixed_radix)
-        bash_command_build = bash_command_build + " -D" + self.mixed_radix_build_str     + "=" + str(self.mixed_radix)
-        bash_command_build = bash_command_build + " -D" + self.max_mixed_radix_build_str + "=" + str(self.max_mixed_radix)
-        bash_command_build = bash_command_build + " -D" + self.is_parallel_build_str     + "=" + str(self.is_parallel)
-        bash_command_build = bash_command_build + " -D" + self.separate_inv_impl_str     + "=" + str(self.separate_inv_impl)
+        bash_command_build = "make clean && make CFLAGS=\"-O2" 
+        bash_command_build += " -D" + self.type_build_str            + "=" + str(self.type_str)
+        bash_command_build += " -D" + self.is_lut_build_str          + "=" + str(self.is_lut)
+        bash_command_build += " -D" + self.fixed_radix_build_str     + "=" + str(self.fixed_radix)
+        bash_command_build += " -D" + self.mixed_radix_build_str     + "=" + str(self.mixed_radix)
+        bash_command_build += " -D" + self.max_mixed_radix_build_str + "=" + str(self.max_mixed_radix)
+        bash_command_build += " -D" + self.is_parallel_build_str     + "=" + str(self.is_parallel)
+        bash_command_build += " -D" + self.separate_inv_impl_str     + "=" + str(self.separate_inv_impl)
         if (self.is_parallel == 1):
-            bash_command_build = bash_command_build + " -fopenmp "
+            bash_command_build += " -fopenmp "
+        bash_command = bash_command_build + "\"" 
+        print(bash_command)
+        # Compile the program 
+        output = self.run_bash_cmd(bash_command) 
+        # Run the program 
+        output = self.run_bash_cmd(PROG_NAME) 
+        if (output.find("PASS") != -1): 
+            print("PASSED for NTT: " + self.variant_name) 
+        else: 
+            print("FAILED for NTT: " + self.variant_name) 
 
         # TODO finish test suite after build
 
-    def __init__(self, type_str, is_lut, fixed_radix, max_mixed_radix, is_parallel): 
+    def __init__(self, type_str, is_lut, fixed_radix, max_mixed_radix, is_parallel, separate_inv_impl): 
         self.type_str = type_str 
         self.is_lut = is_lut 
         self.fixed_radix = fixed_radix 
@@ -44,6 +68,7 @@ class Search_Space:
         # Forward and inverse implementations. To keep a common
         # Interface regardless use function interfaces
         self.separate_inv_impl = separate_inv_impl 
+        self.variant_name = str(self.type_str) + "_LUT" + str(self.is_lut)  + "_F" + str(self.fixed_radix) + "_MR" + str(self.max_mixed_radix) + "_P" + str(self.is_parallel) + "_DI" + str(self.separate_inv_impl)
 
 def build_search_space():
     # TODO might want to move these vectors into a file instead of looping over them
@@ -63,7 +88,7 @@ def build_search_space():
                 new_data_obj = Search_Space(NTT_TYPE, is_lut, False, 1, 0, separate_inv_impl) 
                 search_space_objs.append(new_data_obj) 
         NTT_TYPE = "TYPE_FAST"
-        for is_lut in [False, True]
+        for is_lut in [False, True]:
             for is_fixed_radix in [False, True]:
                 if (is_fixed_radix):
                     new_data_obj = Search_Space(NTT_TYPE, is_lut, True, 2, 0, separate_inv_impl) 
