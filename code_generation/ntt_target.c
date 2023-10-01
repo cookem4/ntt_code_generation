@@ -2,36 +2,15 @@
 
 int barrett_reduce(int a) {
   long int q, t;
-  q = ((long int) 1020) >> 18;
+  q = ((long int) a*1020) >> 18;
   t = (long int) a - (q * 257);
   t = t >= (long int) 257 ? t - (long int) 257 : t;
   return (int) t;
 }
 
-int modinv(int a, int m) {
-    int q, t, r, newt, newr, tempt, tempr;
-    t = 0;
-    newt = 1;
-    r = m;
-    newr = a;
-    while (newr != 0) {
-        q = r / newr;
-        tempt = newt;
-        tempr = newr;
-        newt = t - q*newt;
-        newr = r - q*newr;
-        t = tempt;
-        r = tempr;
-    }
-    if (t < 0) {
-        t += m;
-    }
-    return t;
-}
-
 int barrett_reduce_pow(int a) {
   long int q, t;
-  q = ((long int) 1020) >> 18;
+  q = ((long int) a*128) >> 14;
   t = (long int) a - (q * 128);
   t = t >= (long int) 128 ? t - (long int) 128 : t;
   return (int) t;
@@ -326,7 +305,7 @@ static const int g_stat_inv_twiddle_pows[128] = {
 
 void ntt_impl(int *x, int *y, int inv) {
 
-#if LUT_BASED == 1
+#if LUT_BASED == 0
     int twiddle = 1;
     int twiddle_fact = 1; // Geometrically increasing factor in each loop iteration
     int temp;
@@ -349,7 +328,7 @@ void ntt_impl(int *x, int *y, int inv) {
 #else // LUT_BASED == 1
     #if SEPARATE_INV_DEF == 1 // Need to pick between different g_stat vars
         // This arg is forward_impl from python
-        #if True
+        #if 1
             y[i] = barrett_reduce(y[i] + x[j] * g_stat_twiddle_pows[barrett_reduce_pow(i*j)]);
         #else
             y[i] = barrett_reduce(y[i] + x[j] * g_stat_inv_twiddle_pows[barrett_reduce_pow(i*j)]);
@@ -365,7 +344,7 @@ void ntt_impl(int *x, int *y, int inv) {
         twiddle_fact = barrett_reduce(twiddle_fact * 9);
     #else
         // Use dynamic inv
-        twiddle_fact = barrett_reduce(twiddle_fact * (inv ? modinv(9, 257), 9));
+        twiddle_fact = barrett_reduce(twiddle_fact * (inv ? 28 : 9));
     #endif
 #endif
     }

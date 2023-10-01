@@ -32,12 +32,7 @@ class Ntt_Source:
             temp_str = \
 """
 // Constants
-#define TYPE_N2 0
-#define TYPE_FAST 1
-
-// Mutually exclusive
-// #define FAST_FIXED 1
-// #define FAST_MIXED 0
+#define FAIL_PRINT_INFO 1
 
 // Use OMP
 // #define PARALLEL 1
@@ -47,7 +42,6 @@ class Ntt_Source:
             # and inverse transforms
             file.write("void ntt_impl(int *x, int *y, int inv);\n")
             file.write("void ntt_impl_inv(int *x, int *y, int inv);\n")
-            file.write("int modinv(int, int);\n")
             file.write(f"#endif {self.sub_co} NTT_H \n")
 
         # Write test file
@@ -62,93 +56,6 @@ f"""
 """
             file.write(temp_str)
             temp_str = \
-f"""
-int ntt_check(int *x) {self.sub_oc}
-    int *y = calloc({self.ntt_parameters.n}, sizeof(int));
-    int *y_inv = calloc({self.ntt_parameters.n}, sizeof(int));
-    ntt_impl(x, y, 0);
-    ntt_impl_inv(y, y_inv, 1);
-    int *orig_arr = x;
-    int *final_arr = y_inv;
-    int inv_n = modinv({self.ntt_parameters.n}, {self.ntt_parameters.mod});
-    for (int i = 0; i < {self.ntt_parameters.n}; i++) {self.sub_oc}
-        final_arr[i] = (final_arr[i] * inv_n) % {self.ntt_parameters.mod};
-        if (final_arr[i] != orig_arr[i]) {self.sub_oc}
-            return 0;
-        {self.sub_cc}
-    {self.sub_cc}
-    return 1;
-{self.sub_cc}
-"""
-            file.write(temp_str)
-            file.write("\n\nint main() {\n")
-            temp_str = \
-f"""
-    srand(time(NULL));
-"""
-            file.write(temp_str)
-            temp_str = \
-f"""
-    printf("Running NTT N = %d, mod = %d, g = %d, ginv = %d{self.sub_nl}", {self.ntt_parameters.n}, {self.ntt_parameters.mod}, {self.ntt_parameters.g}, modinv({self.ntt_parameters.g}, {self.ntt_parameters.mod}));
-"""
-            file.write(temp_str)
-            temp_str = \
-f"""
-    int *x = malloc({self.ntt_parameters.n} * sizeof(int));
-    for (int i = 0; i < {self.ntt_parameters.n}; i++) {self.sub_oc}
-        x[i] = rand() % {self.ntt_parameters.mod};
-    {self.sub_cc}
-{self.sub_pc}if DO_TIME
-    struct timeval start, end;
-    double elapsed_time;
-    gettimeofday(&start, NULL);
-{self.sub_pc}endif
-    int check_res = ntt_check(x);
-{self.sub_pc}if DO_TIME
-    gettimeofday(&end, NULL);
-    elapsed_time = (end.tv_sec - start.tv_sec)*1e6 + (end.tv_usec - start.tv_usec);
-    printf("TIME: %0.0f us{self.sub_nl}", elapsed_time);
-{self.sub_pc}endif
-    if (!check_res) {self.sub_oc}
-        {self.sub_pc}if FAIL_PRINT_INFO
-        printf("FWD IN:{self.sub_nl}");
-        for (int i = 0; i < fwd_ctx.size; i++) {self.sub_oc}
-            printf("%d, ", fwd_ctx.in_seq[i]);
-        {self.sub_cc}
-        printf("{self.sub_nl}FWD OUT:{self.sub_nl}");
-        for (int i = 0; i < fwd_ctx.size; i++) {self.sub_oc}
-            printf("%d, ", fwd_ctx.out_seq[i]);
-        {self.sub_cc}
-        printf("{self.sub_nl}INV(FWD):{self.sub_nl}");
-        for (int i = 0; i < fwd_ctx.size; i++) {self.sub_oc}
-            printf("%d, ", inv_ctx.out_seq[i]);
-        {self.sub_cc}
-        printf("{self.sub_nl} FAIL{self.sub_nl}");
-        {self.sub_pc}else
-        printf("FAIL{self.sub_nl}");
-        {self.sub_pc}endif
-    {self.sub_cc} else {self.sub_oc}
-        printf("PASS{self.sub_nl}");
-    {self.sub_cc}
-{self.sub_cc}
-"""
-            file.write(temp_str)
-        # End of Write test file
-
-
-        # Always defined
-        c_barrett_reduction = \
-f"""
-int barrett_reduce(int a) {self.sub_oc}
-  long int q, t;
-  q = ((long int) {self.ntt_parameters.barrett_r}) >> {self.ntt_parameters.barrett_k};
-  t = (long int) a - (q * {self.ntt_parameters.mod});
-  t = t >= (long int) {self.ntt_parameters.mod} ? t - (long int) {self.ntt_parameters.mod} : t;
-  return (int) t;
-{self.sub_cc}
-"""
-
-        c_mod_inv = \
 f"""
 int modinv(int a, int m) {self.sub_oc}
     int q, t, r, newt, newr, tempt, tempr;
@@ -171,13 +78,103 @@ int modinv(int a, int m) {self.sub_oc}
     return t;
 {self.sub_cc}
 """
+            file.write(temp_str)
+            temp_str = \
+f"""
+int ntt_check(int *x, int *y, int *x_inv, int *y_inv) {self.sub_oc}
+    ntt_impl(x, y, 0);
+    ntt_impl_inv(y, y_inv, 1);
+    x_inv = y;
+    int *orig_arr = x;
+    int *final_arr = y_inv;
+    int inv_n = modinv({self.ntt_parameters.n}, {self.ntt_parameters.mod});
+    for (int i = 0; i < {self.ntt_parameters.n}; i++) {self.sub_oc}
+        final_arr[i] = (final_arr[i] * inv_n) % {self.ntt_parameters.mod};
+        if (final_arr[i] != orig_arr[i]) {self.sub_oc}
+            return 0;
+        {self.sub_cc}
+    {self.sub_cc}
+    return 1;
+{self.sub_cc}
+"""
+            file.write(temp_str)
+            file.write("\n\nint main() {\n")
+            temp_str = \
+f"""
+    srand(time(NULL));
+"""
+            file.write(temp_str)
+            temp_str = \
+f"""
+    printf("Running NTT N = %d, mod = %d, g = %d, ginv = %d{self.sub_nl}", {self.ntt_parameters.n}, {self.ntt_parameters.mod}, {self.ntt_parameters.g}, {self.ntt_parameters.g_inv}, {self.ntt_parameters.mod});
+"""
+            file.write(temp_str)
+            temp_str = \
+f"""
+    int *x = malloc({self.ntt_parameters.n} * sizeof(int));
+    int *y = malloc({self.ntt_parameters.n} * sizeof(int));
+    int *x_inv = malloc({self.ntt_parameters.n} * sizeof(int));
+    int *y_inv = malloc({self.ntt_parameters.n} * sizeof(int));
+    for (int i = 0; i < {self.ntt_parameters.n}; i++) {self.sub_oc}
+        {self.sub_co} x[i] = rand() % {self.ntt_parameters.mod};
+        x[i] = i;
+    {self.sub_cc}
+{self.sub_pc}if DO_TIME
+    struct timeval start, end;
+    double elapsed_time;
+    gettimeofday(&start, NULL);
+{self.sub_pc}endif
+    int check_res = ntt_check(x, y, x_inv, y_inv);
+{self.sub_pc}if DO_TIME
+    gettimeofday(&end, NULL);
+    elapsed_time = (end.tv_sec - start.tv_sec)*1e6 + (end.tv_usec - start.tv_usec);
+    printf("TIME: %0.0f us{self.sub_nl}", elapsed_time);
+{self.sub_pc}endif
+    if (!check_res) {self.sub_oc}
+        {self.sub_pc}if FAIL_PRINT_INFO
+        printf("FWD IN:{self.sub_nl}");
+        for (int i = 0; i < {self.ntt_parameters.n}; i++) {self.sub_oc}
+            printf("%d, ", x[i]);
+        {self.sub_cc}
+        printf("{self.sub_nl}FWD OUT:{self.sub_nl}");
+        for (int i = 0; i < {self.ntt_parameters.n}; i++) {self.sub_oc}
+            printf("%d, ", y[i]);
+        {self.sub_cc}
+        printf("{self.sub_nl}INV(FWD):{self.sub_nl}");
+        for (int i = 0; i < {self.ntt_parameters.n}; i++) {self.sub_oc}
+            printf("%d, ", y_inv[i]);
+        {self.sub_cc}
+        printf("{self.sub_nl} FAIL{self.sub_nl}");
+        {self.sub_pc}else
+        printf("FAIL{self.sub_nl}");
+        {self.sub_pc}endif
+    {self.sub_cc} else {self.sub_oc}
+        printf("PASS{self.sub_nl}");
+    {self.sub_cc}
+{self.sub_cc}
+"""
+            file.write(temp_str)
+        # End of Write test file
+
+
+        # Always defined
+        c_barrett_reduction = \
+f"""
+int barrett_reduce(int a) {self.sub_oc}
+  long int q, t;
+  q = ((long int) a*{self.ntt_parameters.barrett_r}) >> {self.ntt_parameters.barrett_k};
+  t = (long int) a - (q * {self.ntt_parameters.mod});
+  t = t >= (long int) {self.ntt_parameters.mod} ? t - (long int) {self.ntt_parameters.mod} : t;
+  return (int) t;
+{self.sub_cc}
+"""
 
         # Reduces the LUT mapping i*j instead of doing the mod operation
         c_power_barrett_reduction = \
 f"""
 int barrett_reduce_pow(int a) {self.sub_oc}
   long int q, t;
-  q = ((long int) {self.ntt_parameters.barrett_r}) >> {self.ntt_parameters.barrett_k};
+  q = ((long int) a*{self.ntt_parameters.barrett_r_pow}) >> {self.ntt_parameters.barrett_k_pow};
   t = (long int) a - (q * {self.ntt_parameters.n});
   t = t >= (long int) {self.ntt_parameters.n} ? t - (long int) {self.ntt_parameters.n} : t;
   return (int) t;
@@ -240,7 +237,6 @@ f"""
 """
 
         c_ntt_impl_tot_str = c_barrett_reduction + \
-                             c_mod_inv + \
                              c_power_barrett_reduction + \
                              c_a_pow_b_mod_m + \
                              c_prime_fact_lut + \
@@ -291,7 +287,7 @@ void ntt_impl_inv(int *x, int *y) {self.sub_oc}
 
         c_N2 = \
 f"""
-{self.sub_pc}if LUT_BASED == 1
+{self.sub_pc}if LUT_BASED == 0
     int twiddle = 1;
     int twiddle_fact = 1; {self.sub_co} Geometrically increasing factor in each loop iteration
     int temp;
@@ -314,7 +310,7 @@ f"""
 {self.sub_pc}else {self.sub_co} LUT_BASED == 1
     {self.sub_pc}if SEPARATE_INV_DEF == 1 {self.sub_co} Need to pick between different g_stat vars
         {self.sub_co} This arg is forward_impl from python
-        {self.sub_pc}if {forward_impl}
+        {self.sub_pc}if {int(forward_impl)}
             y[i] = barrett_reduce(y[i] + x[j] * g_stat_twiddle_pows[barrett_reduce_pow(i*j)]);
         {self.sub_pc}else
             y[i] = barrett_reduce(y[i] + x[j] * g_stat_inv_twiddle_pows[barrett_reduce_pow(i*j)]);
@@ -330,7 +326,7 @@ f"""
         twiddle_fact = barrett_reduce(twiddle_fact * {ntt_parameters.g});
     {self.sub_pc}else
         {self.sub_co} Use dynamic inv
-        twiddle_fact = barrett_reduce(twiddle_fact * (inv ? modinv({ntt_parameters.g}, {ntt_parameters.mod}), {ntt_parameters.g}));
+        twiddle_fact = barrett_reduce(twiddle_fact * (inv ? {ntt_parameters.g_inv} : {ntt_parameters.g}));
     {self.sub_pc}endif
 {self.sub_pc}endif
     {self.sub_cc}
@@ -347,14 +343,14 @@ f"""
         int half_rot = a_pow_b_mod_m({ntt_parameters.g}, {ntt_parameters.n}>>1);
     {self.sub_pc}else
         {self.sub_co} Use dynamic inv
-        int half_rot = a_pow_b_mod_m((inv ? modinv({ntt_parameters.g}, {ntt_parameters.mod}), {ntt_parameters.g}), {ntt_parameters.n}>>1);
+        int half_rot = a_pow_b_mod_m((inv ? {ntt_parameters.g_inv}, {ntt_parameters.g}), {ntt_parameters.n}>>1);
     {self.sub_pc}endif
     int stride_twiddle;
     int running_twiddle_1;
 {self.sub_pc}else
     {self.sub_pc}if SEPARATE_INV_DEF == 1
         {self.sub_co} This arg is forward_impl from python
-        {self.sub_pc}if {forward_impl}
+        {self.sub_pc}if {int(forward_impl)}
             int half_rot = g_stat_twiddle_pows[{ntt_parameters.n}>>1];
         {self.sub_pc}else
             int half_rot = g_stat_inv_twiddle_pows[{ntt_parameters.n}>>1];
@@ -369,7 +365,7 @@ f"""
     {self.sub_pc}if SEPARATE_INV_DEF == 1
         stride_twiddle = a_pow_b_mod_m({ntt_parameters.g}, stride);
     {self.sub_pc}else
-        stride_twiddle = a_pow_b_mod_m((inv ? modinv({ntt_parameters.g}, {ntt_parameters.mod}) : {ntt_parameters.g}), stride);
+        stride_twiddle = a_pow_b_mod_m((inv ? {ntt_parameters.g_inv} : {ntt_parameters.g}), stride);
     {self.sub_pc}endif
         running_twiddle_1 = 1;
 {self.sub_pc}endif
@@ -385,7 +381,7 @@ f"""
                 twiddle2 = barrett_reduce(twiddle1 * half_rot);
 {self.sub_pc}else {self.sub_co} LUT
     {self.sub_pc}if SEPARATE_INV_DEF == 1
-        {self.sub_pc}if {forward_impl}
+        {self.sub_pc}if {int(forward_impl)}
                 twiddle1 = g_stat_twiddle_pows[barrett_reduce_pow(self.sub_trans_idx*stride)];
                 twiddle2 = g_stat_twiddle_pows[barrett_reduce_pow(self.sub_trans_idx*stride + {ntt_parameters.n}>>1)];
         {self.sub_pc}else
@@ -432,8 +428,8 @@ f"""
             base_j_1 = a_pow_b_mod_m({ntt_parameters.g}, n_cur/{ntt_parameters.n});
             base_i_1 = a_pow_b_mod_m({ntt_parameters.g}, n_cur/g_stat_prime_factors[fact_cnt]);
     {self.sub_pc}else
-            base_j_1 = a_pow_b_mod_m((inv ? modinv({ntt_parameters.g}, {ntt_parameters.mod}) : {ntt_parameters.g}), n_cur/{ntt_parameters.n});
-            base_i_1 = a_pow_b_mod_m((inv ? modinv({ntt_parameters.g}, {ntt_parameters.mod}) : {ntt_parameters.g}), n_cur/g_stat_prime_factors[fact_cnt]);
+            base_j_1 = a_pow_b_mod_m((inv ? {ntt_parameters.g_inv} : {ntt_parameters.g}), n_cur/{ntt_parameters.n});
+            base_i_1 = a_pow_b_mod_m((inv ? {ntt_parameters.g_inv} : {ntt_parameters.g}), n_cur/g_stat_prime_factors[fact_cnt]);
     {self.sub_pc}endif
             running_pow_j_2 = 1;
 {self.sub_pc}endif
@@ -463,7 +459,7 @@ f"""
                         running_pow_j_3 = barrett_reduce(running_pow_j_3 * running_pow_j_2);
 {self.sub_pc}else {self.sub_co} LUT
     {self.sub_pc}if SEPARETE_INV_DEF == 1
-        {self.sub_pc}if {forward_impl}
+        {self.sub_pc}if {int(forward_impl)}
                         x[dst_idx] =  barrett_reduce(x[dst_idx] + x_t[butterfly_j] * g_stat_twiddle_pows[barret_reduce_pow((n_cur/{ntt_parameters.n})*ni*butterfly_j + (butterfly_i * {ntt_parameters.n}/g_stat_prime_factors[fact_cnt]))]);
         {self.sub_pc}else
                         x[dst_idx] =  barrett_reduce(x[dst_idx] + x_t[butterfly_j] * g_stat_inv_twiddle_pows[barret_reduce_pow((n_cur/{ntt_parameters.n})*ni*butterfly_j + (butterfly_i * {ntt_parameters.n}/g_stat_prime_factors[fact_cnt]))]);

@@ -34,14 +34,14 @@ class Search_Space:
     # TODO worth collecting cache hit data?
     def run_test_suite(self):
         PROG_NAME = "./ntt_test" 
-        bash_command_build = "make clean && make CFLAGS=\"-O2" 
+        bash_command_build = "make clean && make CFLAGS=\"-O0 -g" 
         bash_command_build += " -D" + self.type_build_str            + "=" + str(self.type_str)
-        bash_command_build += " -D" + self.is_lut_build_str          + "=" + str(self.is_lut)
-        bash_command_build += " -D" + self.fixed_radix_build_str     + "=" + str(self.fixed_radix)
-        bash_command_build += " -D" + self.mixed_radix_build_str     + "=" + str(self.mixed_radix)
+        bash_command_build += " -D" + self.is_lut_build_str          + "=" + str(int(self.is_lut))
+        bash_command_build += " -D" + self.fixed_radix_build_str     + "=" + str(int(self.fixed_radix))
+        bash_command_build += " -D" + self.mixed_radix_build_str     + "=" + str(int(self.mixed_radix))
         bash_command_build += " -D" + self.max_mixed_radix_build_str + "=" + str(self.max_mixed_radix)
-        bash_command_build += " -D" + self.is_parallel_build_str     + "=" + str(self.is_parallel)
-        bash_command_build += " -D" + self.separate_inv_impl_str     + "=" + str(self.separate_inv_impl)
+        bash_command_build += " -D" + self.is_parallel_build_str     + "=" + str(int(self.is_parallel))
+        bash_command_build += " -D" + self.separate_inv_impl_str     + "=" + str(int(self.separate_inv_impl))
         if (self.is_parallel == 1):
             bash_command_build += " -fopenmp "
         bash_command = bash_command_build + "\"" 
@@ -50,6 +50,7 @@ class Search_Space:
         output = self.run_bash_cmd(bash_command) 
         # Run the program 
         output = self.run_bash_cmd(PROG_NAME) 
+        print(output)
         if (output.find("PASS") != -1): 
             print("PASSED for NTT: " + self.variant_name) 
         else: 
