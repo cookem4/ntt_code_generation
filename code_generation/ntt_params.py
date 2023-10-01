@@ -20,6 +20,7 @@ class NTT_Params:
         self.n = dimension
         self.g, self.mod = get_ntt_params(self.n)
         self.inv = inv
+        self.g_inv = modinv(self.g, self.mod)
         self.set_prime_factorization()
         self.barrett_k = 2*math.ceiling(math.log2(self.mod));
         self.barrett_r = ((1 << self.barrett_k) // self.mod);

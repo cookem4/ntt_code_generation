@@ -67,6 +67,8 @@ def main(args):
     # Use optimization algorithm to navigate to a "good" spot
     search_space = ss.build_search_space()
 
+    # TODO for testing purposes should also be able to test a single point
+
     for seach_space_point in seach_space:
         code_gen_point = ns.NTT_Source(seach_space_point, ntt_parameters)
         # Call code gen
