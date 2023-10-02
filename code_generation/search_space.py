@@ -1,5 +1,6 @@
 
 import subprocess
+import re
 
 class Search_Space: 
     type_build_str = "NTT_TYPE"
@@ -14,8 +15,8 @@ class Search_Space:
     # These parameters set by running the test suite
     code_size = 0
     max_heap = 0
-    max_stack = 0
     total_mem = 0
+    instr_ret = 0
     runtime = 0
 
     def run_bash_cmd(self, bash_command): 
@@ -56,7 +57,67 @@ class Search_Space:
         else: 
             print("FAILED for NTT: " + self.variant_name) 
 
-        # TODO finish test suite after build
+        # Tools: 
+        # valgrind --tool=cachegrind,massif,callgrind 
+        # Can then run callgrind_annotate or ms_print for the given callgrind log 
+
+        bash_command = "valgrind --tool=massif " + PROG_NAME 
+        output = self.run_bash_cmd(bash_command) 
+        # Parse the massif output 
+        bash_command = "ls massif* | xargs -I {} ms_print {}" 
+        output = self.run_bash_cmd(bash_command) 
+        massif_pattern = r"(\d+)\s+([\d,]+)\s+([\d,]+)\s+([\d,]+)\s+([\d,]+)\s+([\d,]+)"
+        # The last line looks like this:
+        '''
+        --------------------------------------------------------------------------------
+          n        time(i)         total(B)   useful-heap(B) extra-heap(B)    stacks(B)
+        --------------------------------------------------------------------------------
+         10        206,103            2,376            2,320            56            0
+        '''
+        # We want the total(B) argument
+        matches = re.findall(massif_pattern, output)
+        peak_match = re.findall("(\d+)\s+\(peak\)", output)
+        # Find max manually 
+        this_max = int(matches[0][2].replace(",","")) 
+        for i in matches[1:-1]: 
+            if int(i[2].replace(",","")) > this_max: 
+                this_max = int(i[2].replace(",","")) 
+        self.max_heap = this_max
+        bash_command = "rm massif*" 
+        output = self.run_bash_cmd(bash_command) 
+
+        # Skip callgrind if openMP
+        if (ntt_obj.is_parallel == 0):
+            bash_command = "valgrind --tool=callgrind " + PROG_NAME 
+            output = self.run_bash_cmd(bash_command) 
+            # Parse the massif output 
+            bash_command = "ls callgrind* | xargs -I {} callgrind_annotate {}" 
+            output = self.run_bash_cmd(bash_command) 
+            matches = re.findall(r"([\d,]+).*ntt_impl", output)
+            self.instr_ret = int(matches[0].replace(",",""))
+            bash_command = "rm callgrind*" 
+            output = self.run_bash_cmd(bash_command) 
+        else:
+            self.instr_ret = int(0)
+
+        # Check code size in B 
+        bash_command = "size ntt_target.o" 
+        output = self.run_bash_cmd(bash_command) 
+        matches = re.findall(r"\d+\s+\d+\s+\d+\s+(\d+)", output)
+        self.code_size = int(matches[0])
+
+        # Check runtime with flag 
+        NUM_TIME_RERUN = 10
+        running_sum = 0;
+        bash_command_build = bash_command_build + " -DDO_TIME=1 \"" 
+        # Compile with timing 
+        output = self.run_bash_cmd(bash_command_build) 
+        for i in range(NUM_TIME_RERUN):
+            # Execute 
+            output = self.run_bash_cmd(PROG_NAME) 
+            matches = re.findall(r"TIME\:\s+(\d+)\s+us", output)
+            running_sum = running_sum + int(matches[0])
+        self.runtime = (running_sum / NUM_TIME_RERUN)
 
     def __init__(self, type_str, is_lut, fixed_radix, max_mixed_radix, is_parallel, separate_inv_impl): 
         self.type_str = type_str 
@@ -69,7 +130,7 @@ class Search_Space:
         # Forward and inverse implementations. To keep a common
         # Interface regardless use function interfaces
         self.separate_inv_impl = separate_inv_impl 
-        self.variant_name = str(self.type_str) + "_LUT" + str(self.is_lut)  + "_F" + str(self.fixed_radix) + "_MR" + str(self.max_mixed_radix) + "_P" + str(self.is_parallel) + "_DI" + str(self.separate_inv_impl)
+        self.variant_name = str(self.type_str) + "_LUT" + str(int(self.is_lut))  + "_F" + str(int(self.fixed_radix)) + "_MR" + str(self.max_mixed_radix) + "_P" + str(int(self.is_parallel)) + "_DI" + str(int(self.separate_inv_impl))
 
 def build_search_space():
     # TODO might want to move these vectors into a file instead of looping over them
@@ -82,7 +143,9 @@ def build_search_space():
         for is_lut in [False, True]:
             # TODO temp skip non-lut parallelization for failures due to difficult access
             if is_lut:
-                for is_parallel in [False, True]:
+                # TODO temp skip parallel for omp issues on apple M2
+                # for is_parallel in [False, True]:
+                for is_parallel in [False]:
                     new_data_obj = Search_Space(NTT_TYPE, is_lut, False, 1, is_parallel, separate_inv_impl) 
                     search_space_objs.append(new_data_obj) 
             else:
