@@ -35,7 +35,8 @@ class Search_Space:
     # TODO worth collecting cache hit data?
     def run_test_suite(self):
         PROG_NAME = "./ntt_test" 
-        bash_command_build = "make clean && make CFLAGS=\"-O0 -g" 
+        # bash_command_build = "make clean && make CFLAGS=\"-O0 -g" 
+        bash_command_build = "make clean && make CFLAGS=\"-O3 " 
         bash_command_build += " -D" + self.type_build_str            + "=" + str(self.type_str)
         bash_command_build += " -D" + self.is_lut_build_str          + "=" + str(int(self.is_lut))
         bash_command_build += " -D" + self.fixed_radix_build_str     + "=" + str(int(self.fixed_radix))
@@ -87,7 +88,7 @@ class Search_Space:
         output = self.run_bash_cmd(bash_command) 
 
         # Skip callgrind if openMP
-        if (ntt_obj.is_parallel == 0):
+        if (self.is_parallel == 0):
             bash_command = "valgrind --tool=callgrind " + PROG_NAME 
             output = self.run_bash_cmd(bash_command) 
             # Parse the massif output 
@@ -143,9 +144,7 @@ def build_search_space():
         for is_lut in [False, True]:
             # TODO temp skip non-lut parallelization for failures due to difficult access
             if is_lut:
-                # TODO temp skip parallel for omp issues on apple M2
-                # for is_parallel in [False, True]:
-                for is_parallel in [False]:
+                for is_parallel in [False, True]:
                     new_data_obj = Search_Space(NTT_TYPE, is_lut, False, 1, is_parallel, separate_inv_impl) 
                     search_space_objs.append(new_data_obj) 
             else:

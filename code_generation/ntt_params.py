@@ -79,3 +79,9 @@ def modinv(a, m):
         t += m
     return t
 
+def a_pow_b_mod_m(a, b, m):
+    abm = 1
+    for i in range(b):
+        abm = (abm * a) % m
+    return abm
+

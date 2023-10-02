@@ -27,7 +27,8 @@ class Ntt_Source:
         # Write header file constants
         with open(self.h_target_name, "w") as file:
             file.write("#ifndef NTT_H\n#define NTT_H\n")
-            file.write("#include <stdlib.h>\n")
+            # TODO stdlib not needed?
+            file.write("// #include <stdlib.h>\n")
             if self.search_space_point.is_parallel:
                 file.write("#include <omp.h>\n")
             temp_str = \
@@ -348,10 +349,10 @@ f"""
     {self.sub_cc}
 {self.sub_pc}if LUT_BASED == 0
     {self.sub_pc}if SEPARATE_INV_DEF == 1
-        int half_rot = a_pow_b_mod_m({ntt_parameters.g}, {ntt_parameters.n}>>1);
+        int half_rot = {nt.a_pow_b_mod_m(ntt_parameters.g, ntt_parameters.n>>1, ntt_parameters.mod)};
     {self.sub_pc}else
         {self.sub_co} Use dynamic inv
-        int half_rot = a_pow_b_mod_m((inv ? {ntt_parameters.g_inv} : {ntt_parameters.g}), {ntt_parameters.n}>>1);
+        int half_rot = inv ? {nt.a_pow_b_mod_m(ntt_parameters.g_inv, ntt_parameters.n>>1, ntt_parameters.mod)} : {nt.a_pow_b_mod_m(ntt_parameters.g, ntt_parameters.n>>1, ntt_parameters.mod)};
     {self.sub_pc}endif
     int stride_twiddle;
     int running_twiddle_1;
