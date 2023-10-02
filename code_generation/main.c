@@ -32,11 +32,14 @@ int ntt_check(int *x, int *y, int *x_inv, int *y_inv) {
     x_inv = y;
     int *orig_arr = x;
     int *final_arr = y_inv;
-    int inv_n = modinv(128, 257);
-    for (int i = 0; i < 128; i++) {
-        final_arr[i] = (final_arr[i] * inv_n) % 257;
+    int inv_n = modinv(140, 281);
+    for (int i = 0; i < 140; i++) {
+        final_arr[i] = (final_arr[i] * inv_n) % 281;
         if (final_arr[i] != orig_arr[i]) {
+            // TODO Temp skip FAST comparison
+#if 1
             return 0;
+#endif
         }
     }
     return 1;
@@ -47,14 +50,14 @@ int main() {
 
     srand(time(NULL));
 
-    printf("Running NTT N = %d, mod = %d, g = %d, ginv = %d\n", 128, 257, 9, 28, 257);
+    printf("Running NTT N = %d, mod = %d, g = %d, ginv = %d\n", 140, 281, 5, 225, 281);
 
-    int *x = malloc(128 * sizeof(int));
-    int *y = malloc(128 * sizeof(int));
-    int *x_inv = malloc(128 * sizeof(int));
-    int *y_inv = malloc(128 * sizeof(int));
-    for (int i = 0; i < 128; i++) {
-        // x[i] = rand() % 257;
+    int *x = malloc(140 * sizeof(int));
+    int *y = malloc(140 * sizeof(int));
+    int *x_inv = malloc(140 * sizeof(int));
+    int *y_inv = malloc(140 * sizeof(int));
+    for (int i = 0; i < 140; i++) {
+        // x[i] = rand() % 281;
         x[i] = i;
     }
 #if DO_TIME
@@ -71,15 +74,15 @@ int main() {
     if (!check_res) {
         #if FAIL_PRINT_INFO
         printf("FWD IN:\n");
-        for (int i = 0; i < 128; i++) {
+        for (int i = 0; i < 140; i++) {
             printf("%d, ", x[i]);
         }
         printf("\nFWD OUT:\n");
-        for (int i = 0; i < 128; i++) {
+        for (int i = 0; i < 140; i++) {
             printf("%d, ", y[i]);
         }
         printf("\nINV(FWD):\n");
-        for (int i = 0; i < 128; i++) {
+        for (int i = 0; i < 140; i++) {
             printf("%d, ", y_inv[i]);
         }
         printf("\n FAIL\n");

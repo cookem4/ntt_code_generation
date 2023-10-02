@@ -1,4 +1,5 @@
 import math
+import copy
 
 class NTT_Params:
     prime_factorization = []
@@ -20,6 +21,7 @@ class NTT_Params:
         self.n = dimension
         self.g, self.mod = get_ntt_params(self.n)
         self.g_inv = modinv(self.g, self.mod)
+        self.prime_factorization = []
         self.set_prime_factorization()
         self.barrett_k = 2*math.ceil(math.log2(self.mod));
         self.barrett_r = ((1 << self.barrett_k) // self.mod);
@@ -66,13 +68,13 @@ def modinv(a, m):
     r = m
     newr = a
     while (newr != 0):
-        q = r // newr
-        tempt = newt
-        tempr = newr
-        newt = t = q*newt
+        q = int(math.floor(r / newr))
+        tempt = copy.copy(newt)
+        tempr = copy.copy(newr)
+        newt = t - q*newt
         newr = r - q*newr
-        t = tempt
-        r = tempr
+        t = copy.copy(tempt)
+        r = copy.copy(tempr)
     if (t < 0):
         t += m
     return t

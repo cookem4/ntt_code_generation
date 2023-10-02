@@ -53,19 +53,14 @@ def main(args):
     # Use optimization algorithm to navigate to a "good" spot
     search_space = ss.build_search_space()
 
-    # TODO for testing purposes should also be able to test a single point
-
-    code_gen_inst = ns.Ntt_Source(search_space[0], ntt_parameters)
-    code_gen_inst.generate_target()
-    search_space[0].run_test_suite()
-
-    '''
-    for seach_space_point in seach_space:
-        code_gen_point = ns.NTT_Source(seach_space_point, ntt_parameters)
+    for search_space_point in search_space:
+        code_gen_point = ns.Ntt_Source(search_space_point, ntt_parameters)
         # Call code gen
         code_gen_point.generate_target()
-    '''
-
+        search_space_point.run_test_suite()
+        # After running the test suite we have a point on the domain indicating the code size, etc alongside runtime
+        # We want the minimum runtime that fits within the given constraints on memory utilization
+        print(f"Runtime: {search_space_point.runtime} Code size: {search_space_point.code_size} Heap size: {search_space_point.max_heap} Instructions retired: {search_space_point.instr_ret}")
     
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Code generation in C for efficient arbitrary-radix NTT implementations")

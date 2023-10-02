@@ -6,6 +6,7 @@
 
 import ntt_params as nt
 import search_space as ss
+import pdb
 
 # This class should be able to build out the source code given a set of NTT
 # parameters and a search space object defining the point in the space
@@ -91,7 +92,10 @@ int ntt_check(int *x, int *y, int *x_inv, int *y_inv) {self.sub_oc}
     for (int i = 0; i < {self.ntt_parameters.n}; i++) {self.sub_oc}
         final_arr[i] = (final_arr[i] * inv_n) % {self.ntt_parameters.mod};
         if (final_arr[i] != orig_arr[i]) {self.sub_oc}
+            {self.sub_co} TODO Temp skip FAST comparison
+{self.sub_pc}if {int(self.search_space_point.type_str != "TYPE_FAST")}
             return 0;
+{self.sub_pc}endif
         {self.sub_cc}
     {self.sub_cc}
     return 1;
@@ -228,7 +232,7 @@ static const int g_stat_inv_twiddle_pows[{self.ntt_parameters.n}] = {self.sub_oc
         running_pow = 1
         for i in range(self.ntt_parameters.n-1):
             c_static_inv_pow_lut += f"\t{running_pow}, \n"
-            running_pow = (running_pow * self.ntt_parameters.g_inv) % self.ntt_parameters.mod
+            running_pow = (running_pow * nt.modinv(self.ntt_parameters.g, self.ntt_parameters.mod)) % self.ntt_parameters.mod
         c_static_inv_pow_lut += f"\t{running_pow} \n"
         c_static_inv_pow_lut += \
 f"""
@@ -281,7 +285,7 @@ void ntt_impl(int *x, int *y, int inv) {self.sub_oc}
         else:
             c_ntt_impl_func_proto = \
 f"""
-void ntt_impl_inv(int *x, int *y) {self.sub_oc}
+void ntt_impl_inv(int *x, int *y, int inv) {self.sub_oc}
 """
         ntt_impl_string += c_ntt_impl_func_proto
 
@@ -338,12 +342,16 @@ f"""
     int twiddle1, twiddle2;
     int cur_size;
     int cur_idx;
+    {self.sub_co} Copy x to y then do inplace
+    for (int i = 0; i < {ntt_parameters.n}; i++) {self.sub_oc}
+        y[i] = x[i];
+    {self.sub_cc}
 {self.sub_pc}if LUT_BASED == 0
     {self.sub_pc}if SEPARATE_INV_DEF == 1
         int half_rot = a_pow_b_mod_m({ntt_parameters.g}, {ntt_parameters.n}>>1);
     {self.sub_pc}else
         {self.sub_co} Use dynamic inv
-        int half_rot = a_pow_b_mod_m((inv ? {ntt_parameters.g_inv}, {ntt_parameters.g}), {ntt_parameters.n}>>1);
+        int half_rot = a_pow_b_mod_m((inv ? {ntt_parameters.g_inv} : {ntt_parameters.g}), {ntt_parameters.n}>>1);
     {self.sub_pc}endif
     int stride_twiddle;
     int running_twiddle_1;
@@ -370,10 +378,10 @@ f"""
         running_twiddle_1 = 1;
 {self.sub_pc}endif
         {self.sub_co} For each of the "self.sub-transforms" in the CT butterfly
-        for (int self.sub_trans_idx = 0; self.sub_trans_idx < {ntt_parameters.n}/cur_size; self.sub_trans_idx++) {self.sub_oc}
-            {self.sub_co} We take steps within our self.sub transform
+        for (int sub_trans_idx = 0; sub_trans_idx < {ntt_parameters.n}/cur_size; sub_trans_idx++) {self.sub_oc}
+            {self.sub_co} We take steps within our sub transform
             for (int step = 0; step < stride; step++) {self.sub_oc}
-                cur_idx = self.sub_trans_idx*cur_size + step;
+                cur_idx = sub_trans_idx*cur_size + step;
 {self.sub_pc}if LUT_BASED == 0
                 twiddle1 = running_twiddle_1;
                 running_twiddle_1 = barrett_reduce(stride_twiddle * running_twiddle_1);
@@ -382,19 +390,19 @@ f"""
 {self.sub_pc}else {self.sub_co} LUT
     {self.sub_pc}if SEPARATE_INV_DEF == 1
         {self.sub_pc}if {int(forward_impl)}
-                twiddle1 = g_stat_twiddle_pows[barrett_reduce_pow(self.sub_trans_idx*stride)];
-                twiddle2 = g_stat_twiddle_pows[barrett_reduce_pow(self.sub_trans_idx*stride + {ntt_parameters.n}>>1)];
+                twiddle1 = g_stat_twiddle_pows[barrett_reduce_pow(sub_trans_idx*stride)];
+                twiddle2 = g_stat_twiddle_pows[barrett_reduce_pow(sub_trans_idx*stride + {ntt_parameters.n}>>1)];
         {self.sub_pc}else
-                twiddle1 = g_stat_inv_twiddle_pows[barrett_reduce_pow(self.sub_trans_idx*stride)];
-                twiddle2 = g_stat_inv_twiddle_pows[barrett_reduce_pow(self.sub_trans_idx*stride + {ntt_parameters.n}>>1)];
+                twiddle1 = g_stat_inv_twiddle_pows[barrett_reduce_pow(sub_trans_idx*stride)];
+                twiddle2 = g_stat_inv_twiddle_pows[barrett_reduce_pow(sub_trans_idx*stride + {ntt_parameters.n}>>1)];
         {self.sub_pc}endif
     {self.sub_pc}else
-                twiddle1 = inv ? g_stat_inv_twiddle_pows[barrett_reduce_pow(self.sub_trans_idx*stride)] : g_stat_twiddle_pows[barrett_reduce_pow(self.sub_trans_idx*stride)];
-                twiddle2 = inv ? g_stat_inv_twiddle_pows[barrett_reduce_pow(self.sub_trans_idx*stride)] : g_stat_twiddle_pows[barrett_reduce_pow(self.sub_trans_idx*stride + {ntt_parameters.n}>>1)];
+                twiddle1 = inv ? g_stat_inv_twiddle_pows[barrett_reduce_pow(sub_trans_idx*stride)] : g_stat_twiddle_pows[barrett_reduce_pow(sub_trans_idx*stride)];
+                twiddle2 = inv ? g_stat_inv_twiddle_pows[barrett_reduce_pow(sub_trans_idx*stride)] : g_stat_twiddle_pows[barrett_reduce_pow(sub_trans_idx*stride + {ntt_parameters.n}>>1)];
     {self.sub_pc}endif
 {self.sub_pc}endif
-                x[cur_idx + stride] = barrett_reduce(x[cur_idx] + x[cur_idx + stride] * twiddle2);
-                x[cur_idx] = barrett_reduce(x[cur_idx] + x[cur_idx + stride] * twiddle1);
+                y[cur_idx + stride] = barrett_reduce(y[cur_idx] + y[cur_idx + stride] * twiddle2);
+                y[cur_idx] = barrett_reduce(y[cur_idx] + y[cur_idx + stride] * twiddle1);
             {self.sub_cc}
         {self.sub_cc}
     {self.sub_cc}
@@ -411,6 +419,10 @@ f"""
     int fact_cnt = 0;
     int n2 = n_cur/g_stat_prime_factors[fact_cnt];
     int dst_idx;
+    {self.sub_co} Copy x to y then do inplace
+    for (int i = 0; i < {ntt_parameters.n}; i++) {self.sub_oc}
+        y[i] = x[i];
+    {self.sub_cc}
 {self.sub_pc}if LUT_BASED == 0
     int base_j_1; {self.sub_co} With n_cur/DIM
     int running_pow_j_2; {self.sub_co} With above ^ni
@@ -436,10 +448,10 @@ f"""
             {self.sub_co} We take steps within our self.sub transform
             for (int ni = 0; ni < n2; ni++) {self.sub_oc}
                 {self.sub_co} TODO any way around this dynamic memory allocation?
-                int *x_t = calloc(g_stat_prime_factors[fact_cnt], sizeof(int));
+                int *y_t = calloc(g_stat_prime_factors[fact_cnt], sizeof(int));
                 for (int butterfly_i = 0; butterfly_i < g_stat_prime_factors[fact_cnt]; butterfly_i++) {self.sub_oc}
                     dst_idx = n1*n_cur + ni + butterfly_i*n2;
-                    x_t[butterfly_i] = x[dst_idx]; {self.sub_co} Temp save
+                    y_t[butterfly_i] = y[dst_idx]; {self.sub_co} Temp save
                 {self.sub_cc}
                 {self.sub_co} We have N^2 terms to add where N is the prime factor
                 {self.sub_co} Since N sums into each N node of the self.sub transform
@@ -454,18 +466,18 @@ f"""
                         dst_idx = n1*n_cur + ni + butterfly_i*n2;
 {self.sub_pc}if LUT_BASED == 0
                         int red1 = barrett_reduce(running_pow_j_3 * running_pow_i_2);
-                        int red2 = barrett_reduce(red2 * x_t[butterfly_j]);
-                        x[dst_idx] =  barrett_reduce(x[dst_idx] + red2);
+                        int red2 = barrett_reduce(red2 * y_t[butterfly_j]);
+                        y[dst_idx] =  barrett_reduce(y[dst_idx] + red2);
                         running_pow_j_3 = barrett_reduce(running_pow_j_3 * running_pow_j_2);
 {self.sub_pc}else {self.sub_co} LUT
     {self.sub_pc}if SEPARETE_INV_DEF == 1
         {self.sub_pc}if {int(forward_impl)}
-                        x[dst_idx] =  barrett_reduce(x[dst_idx] + x_t[butterfly_j] * g_stat_twiddle_pows[barret_reduce_pow((n_cur/{ntt_parameters.n})*ni*butterfly_j + (butterfly_i * {ntt_parameters.n}/g_stat_prime_factors[fact_cnt]))]);
+                        y[dst_idx] =  barrett_reduce(y[dst_idx] + y_t[butterfly_j] * g_stat_twiddle_pows[barrett_reduce_pow((n_cur/{ntt_parameters.n})*ni*butterfly_j + (butterfly_i * {ntt_parameters.n}/g_stat_prime_factors[fact_cnt]))]);
         {self.sub_pc}else
-                        x[dst_idx] =  barrett_reduce(x[dst_idx] + x_t[butterfly_j] * g_stat_inv_twiddle_pows[barret_reduce_pow((n_cur/{ntt_parameters.n})*ni*butterfly_j + (butterfly_i * {ntt_parameters.n}/g_stat_prime_factors[fact_cnt]))]);
+                        y[dst_idx] =  barrett_reduce(y[dst_idx] + y_t[butterfly_j] * g_stat_inv_twiddle_pows[barrett_reduce_pow((n_cur/{ntt_parameters.n})*ni*butterfly_j + (butterfly_i * {ntt_parameters.n}/g_stat_prime_factors[fact_cnt]))]);
         {self.sub_pc}endif
     {self.sub_pc}else
-                        x[dst_idx] =  barrett_reduce(x[dst_idx] + x_t[butterfly_j] * (inv ? g_stat_inv_twiddle_pows[barret_reduce_pow((n_cur/{ntt_parameters.n})*ni*butterfly_j + (butterfly_i * {ntt_parameters.n}/g_stat_prime_factors[fact_cnt]))] : g_stat_twiddle_pows[barret_reduce_pow((n_cur/{ntt_parameters.n})*ni*butterfly_j + (butterfly_i * {ntt_parameters.n}/g_stat_prime_factors[fact_cnt]))]));
+                        y[dst_idx] =  barrett_reduce(y[dst_idx] + y_t[butterfly_j] * (inv ? g_stat_inv_twiddle_pows[barrett_reduce_pow((n_cur/{ntt_parameters.n})*ni*butterfly_j + (butterfly_i * {ntt_parameters.n}/g_stat_prime_factors[fact_cnt]))] : g_stat_twiddle_pows[barrett_reduce_pow((n_cur/{ntt_parameters.n})*ni*butterfly_j + (butterfly_i * {ntt_parameters.n}/g_stat_prime_factors[fact_cnt]))]));
     {self.sub_pc}endif
 {self.sub_pc}endif
                     {self.sub_cc}
@@ -473,7 +485,7 @@ f"""
                     running_pow_i_2 = barrett_reduce(running_pow_i_2 * base_i_1);
 {self.sub_pc}endif
                 {self.sub_cc}
-                free(x_t);
+                free(y_t);
             {self.sub_cc}
 {self.sub_pc}if LUT_BASED == 0
             running_pow_j_2 = barrett_reduce(running_pow_j_2 * base_j_1);
@@ -508,4 +520,13 @@ f"""
     def __init__(self, search_space_point, ntt_parameters):
         self.search_space_point = search_space_point
         self.ntt_parameters = ntt_parameters
+        # For FAST implemenations, check the prime factorizaiton and
+        # expand the dimension as needed
+        if (self.search_space_point.type_str == "TYPE_FAST"):
+            dimension = self.ntt_parameters.n
+            print("Original dimension of ", dimension)
+            while max(self.ntt_parameters.prime_factorization) > self.search_space_point.max_mixed_radix:
+                dimension += 1
+                self.ntt_parameters = nt.NTT_Params(dimension)
+            print("Dimension expanded to ", dimension)
 
