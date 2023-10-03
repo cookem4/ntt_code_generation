@@ -46,7 +46,6 @@ class Search_Space:
         # valgrind --tool=cachegrind,massif,callgrind 
         # Can then run callgrind_annotate or ms_print for the given callgrind log 
 
-        '''
         bash_command = "valgrind --tool=massif " + PROG_NAME 
         output = self.run_bash_cmd(bash_command) 
         # Parse the massif output 
@@ -102,7 +101,6 @@ class Search_Space:
             matches = re.findall(r"TIME\:\s+(\d+)\s+us", output)
             running_sum = running_sum + int(matches[0])
         self.runtime = (running_sum / NUM_TIME_RERUN)
-        '''
 
     def __init__(self, type_str, is_lut, fixed_radix, max_mixed_radix, is_parallel, separate_inv_impl): 
         self.type_str = type_str 
@@ -128,8 +126,7 @@ def build_search_space():
         for is_lut in [False, True]:
             # TODO temp skip non-lut parallelization for failures due to difficult access
             if is_lut:
-                # for is_parallel in [False, True]:
-                for is_parallel in [False]:
+                for is_parallel in [False, True]:
                     new_data_obj = Search_Space(NTT_TYPE, is_lut, False, 1, is_parallel, separate_inv_impl) 
                     search_space_objs.append(new_data_obj) 
             else:
