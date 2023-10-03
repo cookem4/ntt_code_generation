@@ -28,16 +28,13 @@ class Ntt_Source:
         with open(self.h_target_name, "w") as file:
             file.write("#ifndef NTT_H\n#define NTT_H\n")
             # TODO stdlib not needed?
-            file.write("// #include <stdlib.h>\n")
+            file.write("#include <stdlib.h>\n")
             if self.search_space_point.is_parallel:
                 file.write("#include <omp.h>\n")
             temp_str = \
 """
 // Constants
 #define FAIL_PRINT_INFO 1
-
-// Use OMP
-// #define PARALLEL 1
 """
             file.write(temp_str)
             # Inv flag only matters when we share an implementation between forward
@@ -196,50 +193,55 @@ int a_pow_b_mod_m(int a, int b) {self.sub_oc}
 {self.sub_cc}
 """
         # Populated and used by FAST MR
-        c_prime_fact_lut = \
+        if self.search_space_point.type_str == "TYPE_FAST" and self.search_space_point.mixed_radix:
+            c_prime_fact_lut = \
 f"""
-{self.sub_pc}if FAST_MIXED == 1
 static const int g_stat_prime_factors[{len(self.ntt_parameters.prime_factorization)}] = {self.sub_oc}
 """
-        for i in range(len(self.ntt_parameters.prime_factorization)-1):
-            c_prime_fact_lut += f"\t{self.ntt_parameters.prime_factorization[i]}, \n"
-        c_prime_fact_lut += f"\t{self.ntt_parameters.prime_factorization[len(self.ntt_parameters.prime_factorization)-1]}\n"
-        c_prime_fact_lut += \
+            for i in range(len(self.ntt_parameters.prime_factorization)-1):
+                c_prime_fact_lut += f"\t{self.ntt_parameters.prime_factorization[i]}, \n"
+            c_prime_fact_lut += f"\t{self.ntt_parameters.prime_factorization[len(self.ntt_parameters.prime_factorization)-1]}\n"
+            c_prime_fact_lut += \
 f"""
 {self.sub_cc};
-{self.sub_pc}endif {self.sub_co} End FAST_MIXED
 """
-        # Defined and populated if LUT approach used
-        c_static_pow_lut = \
+        else:
+            # Not defined for non-mixed
+            c_prime_fact_lut = ""
+
+        if self.search_space_point.is_lut:
+            # Defined and populated if LUT approach used
+            c_static_pow_lut = \
 f"""
-{self.sub_pc}if LUT_BASED == 1
 static const int g_stat_twiddle_pows[{self.ntt_parameters.n}] = {self.sub_oc}
 """
-        # Power lut entries
-        running_pow = 1
-        for i in range(self.ntt_parameters.n-1):
-            c_static_pow_lut += f"\t{running_pow}, \n"
-            running_pow = (running_pow * self.ntt_parameters.g) % self.ntt_parameters.mod
-        c_static_pow_lut += f"\t{running_pow} \n"
-        c_static_pow_lut += \
+            # Power lut entries
+            running_pow = 1
+            for i in range(self.ntt_parameters.n-1):
+                c_static_pow_lut += f"\t{running_pow}, \n"
+                running_pow = (running_pow * self.ntt_parameters.g) % self.ntt_parameters.mod
+            c_static_pow_lut += f"\t{running_pow} \n"
+            c_static_pow_lut += \
 f"""
 {self.sub_cc};
 """
-        c_static_inv_pow_lut = \
+            c_static_inv_pow_lut = \
 f"""
 static const int g_stat_inv_twiddle_pows[{self.ntt_parameters.n}] = {self.sub_oc}
 """
-        # Power lut entries
-        running_pow = 1
-        for i in range(self.ntt_parameters.n-1):
-            c_static_inv_pow_lut += f"\t{running_pow}, \n"
-            running_pow = (running_pow * nt.modinv(self.ntt_parameters.g, self.ntt_parameters.mod)) % self.ntt_parameters.mod
-        c_static_inv_pow_lut += f"\t{running_pow} \n"
-        c_static_inv_pow_lut += \
+            # Power lut entries
+            running_pow = 1
+            for i in range(self.ntt_parameters.n-1):
+                c_static_inv_pow_lut += f"\t{running_pow}, \n"
+                running_pow = (running_pow * nt.modinv(self.ntt_parameters.g, self.ntt_parameters.mod)) % self.ntt_parameters.mod
+            c_static_inv_pow_lut += f"\t{running_pow} \n"
+            c_static_inv_pow_lut += \
 f"""
 {self.sub_cc};
-{self.sub_pc}endif {self.sub_co} LUT_BASED
 """
+        else:
+            c_static_pow_lut = ""
+            c_static_inv_pow_lut = ""
 
         c_ntt_impl_tot_str = c_barrett_reduction + \
                              c_power_barrett_reduction + \
@@ -290,52 +292,164 @@ void ntt_impl_inv(int *x, int *y, int inv) {self.sub_oc}
 """
         ntt_impl_string += c_ntt_impl_func_proto
 
-        c_N2 = \
+        ############################################################
+        # String substitutions into general loop structure for N2
+        ############################################################
+        c_N2_omp_pragma = ""
+        if self.search_space_point.is_parallel:
+            c_N2_omp_pragma = \
 f"""
-{self.sub_pc}if LUT_BASED == 0
+{self.sub_pc}pragma omp parallel for
+"""
+
+        c_N2_no_lut_twiddle_def = ""
+        c_N2_inner_twiddle_init = ""
+        c_N2_inner_impl = ""
+        c_N2_outer_twiddle_incr = ""
+
+        if not self.search_space_point.is_lut:
+            c_N2_inner_twiddle_init = \
+f"""
+        twiddle = 1;
+"""
+            c_N2_no_lut_twiddle_def = \
+f"""
     int twiddle = 1;
     int twiddle_fact = 1; {self.sub_co} Geometrically increasing factor in each loop iteration
     int temp;
-{self.sub_pc}endif
-    for (int i = 0; i < {ntt_parameters.n}; i++) {self.sub_oc}
-        y[i] = 0;
-    {self.sub_cc}
-{self.sub_pc}if PARALLEL == 1
-    {self.sub_pc}pragma omp parallel for
-    {self.sub_pc}endif
-    for (int i = 0; i < {ntt_parameters.n}; i++) {self.sub_oc}
-{self.sub_pc}if LUT_BASED == 0
-        twiddle = 1;
-{self.sub_pc}endif
-        for (int j = 0; j < {ntt_parameters.n}; j++) {self.sub_oc}
-{self.sub_pc}if LUT_BASED == 0
+"""
+            c_N2_inner_impl = \
+f"""
             twiddle = j == 0 ? 1 : barrett_reduce(twiddle * twiddle_fact);
             temp = barrett_reduce(x[j] * twiddle);
             y[i] = y[i] + temp > {ntt_parameters.mod} ? y[i] + temp - {ntt_parameters.mod} : y[i] + temp;
-{self.sub_pc}else {self.sub_co} LUT_BASED == 1
-    {self.sub_pc}if SEPARATE_INV_DEF == 1 {self.sub_co} Need to pick between different g_stat vars
-        {self.sub_co} This arg is forward_impl from python
-        {self.sub_pc}if {int(forward_impl)}
-            y[i] = barrett_reduce(y[i] + x[j] * g_stat_twiddle_pows[barrett_reduce_pow(i*j)]);
-        {self.sub_pc}else
-            y[i] = barrett_reduce(y[i] + x[j] * g_stat_inv_twiddle_pows[barrett_reduce_pow(i*j)]);
-        {self.sub_pc}endif
-    {self.sub_pc}else {self.sub_co} Dynamic inv used since same func reused for fwd and inv
-            y[i] = barrett_reduce(y[i] + x[j] * (inv ? g_stat_inv_twiddle_pows[barrett_reduce_pow(i*j)] : g_stat_twiddle_pows[barrett_reduce_pow(i*j)]));
-    {self.sub_pc}endif
-{self.sub_pc}endif
-        {self.sub_cc}
-{self.sub_pc}if LUT_BASED == 0
-        {self.sub_co} Increase twiddle factor
-    {self.sub_pc}if SEPARATE_INV_DEF == 1
+"""
+            if self.search_space_point.separate_inv_impl:
+                c_N2_outer_twiddle_incr = \
+f"""
         twiddle_fact = barrett_reduce(twiddle_fact * {ntt_parameters.g});
-    {self.sub_pc}else
-        {self.sub_co} Use dynamic inv
+"""
+                
+            else:
+                c_N2_outer_twiddle_incr = \
+f"""
         twiddle_fact = barrett_reduce(twiddle_fact * (inv ? {ntt_parameters.g_inv} : {ntt_parameters.g}));
-    {self.sub_pc}endif
-{self.sub_pc}endif
+"""
+        # LUT BASED
+        else:
+            if self.search_space_point.separate_inv_impl:
+                if forward_impl:
+                    c_N2_inner_impl = \
+f"""
+            y[i] = barrett_reduce(y[i] + x[j] * g_stat_twiddle_pows[barrett_reduce_pow(i*j)]);
+"""
+                else:
+                    c_N2_inner_impl = \
+f"""
+            y[i] = barrett_reduce(y[i] + x[j] * g_stat_inv_twiddle_pows[barrett_reduce_pow(i*j)]);
+"""
+            else:
+                c_N2_inner_impl = \
+f"""
+            y[i] = barrett_reduce(y[i] + x[j] * (inv ? g_stat_inv_twiddle_pows[barrett_reduce_pow(i*j)] : g_stat_twiddle_pows[barrett_reduce_pow(i*j)]));
+"""
+        ############################################################
+
+
+        c_N2 = \
+f"""
+    for (int i = 0; i < {ntt_parameters.n}; i++) {self.sub_oc}
+        y[i] = 0;
+    {self.sub_cc}
+    {c_N2_no_lut_twiddle_def}
+    {c_N2_omp_pragma}
+    for (int i = 0; i < {ntt_parameters.n}; i++) {self.sub_oc}
+        {c_N2_inner_twiddle_init}
+        for (int j = 0; j < {ntt_parameters.n}; j++) {self.sub_oc}
+            {c_N2_inner_impl}
+        {self.sub_cc}
+        {c_N2_outer_twiddle_incr}
     {self.sub_cc}
 """
+        ############################################################
+        # String substitutions into general loop structure for N2
+        ############################################################
+        c_R2_half_rot_init = ""
+        c_R2_stride_twiddle = ""
+        c_R2_running_twiddle_1_init = ""
+        c_R2_twiddle1_twiddle2_assign = ""
+
+        if not self.search_space_point.is_lut:
+            c_R2_running_twiddle_1_init = \
+f"""
+        running_twiddle_1 = 1;
+"""
+            c_R2_twiddle1_twiddle2_assign = \
+f"""
+                twiddle1 = running_twiddle_1;
+                running_twiddle_1 = barrett_reduce(stride_twiddle * running_twiddle_1);
+                {self.sub_co} Twiddle 2 is offset half a rotation from twiddle 1
+                twiddle2 = barrett_reduce(twiddle1 * half_rot);
+"""
+            if self.search_space_point.separate_inv_impl:
+                c_R2_half_rot_init = \
+f"""
+    int half_rot = {nt.a_pow_b_mod_m(ntt_parameters.g, ntt_parameters.n>>1, ntt_parameters.mod)};
+    int stride_twiddle;
+    int running_twiddle_1;
+"""
+                c_R2_stride_twiddle = \
+f"""
+        stride_twiddle = a_pow_b_mod_m({ntt_parameters.g}, stride);
+"""
+            else:
+                c_R2_half_rot_init = \
+f"""
+    int half_rot = inv ? {nt.a_pow_b_mod_m(ntt_parameters.g_inv, ntt_parameters.n>>1, ntt_parameters.mod)} : {nt.a_pow_b_mod_m(ntt_parameters.g, ntt_parameters.n>>1, ntt_parameters.mod)};
+    int stride_twiddle;
+    int running_twiddle_1;
+"""
+                c_R2_stride_twiddle = \
+f"""
+        stride_twiddle = a_pow_b_mod_m((inv ? {ntt_parameters.g_inv} : {ntt_parameters.g}), stride);
+"""
+
+        else:
+            if self.search_space_point.separate_inv_impl:
+                if forward_impl:
+                    c_R2_half_rot_init = \
+f"""
+    int half_rot = g_stat_twiddle_pows[{ntt_parameters.n}>>1];
+"""
+                    c_R2_twiddle1_twiddle2_assign = \
+f"""
+                twiddle1 = g_stat_twiddle_pows[barrett_reduce_pow(sub_trans_idx*stride)];
+                twiddle2 = g_stat_twiddle_pows[barrett_reduce_pow(sub_trans_idx*stride + {ntt_parameters.n}>>1)];
+"""
+
+                else:
+                    c_R2_half_rot_init = \
+f"""
+    int half_rot = g_stat_inv_twiddle_pows[{ntt_parameters.n}>>1];
+"""
+                    c_R2_twiddle1_twiddle2_assign = \
+f"""
+                twiddle1 = g_stat_inv_twiddle_pows[barrett_reduce_pow(sub_trans_idx*stride)];
+                twiddle2 = g_stat_inv_twiddle_pows[barrett_reduce_pow(sub_trans_idx*stride + {ntt_parameters.n}>>1)];
+"""
+
+            else:
+                c_R2_half_rot_init = \
+f"""
+    int half_rot = inv ? g_stat_inv_twiddle_pows[{ntt_parameters.n}>>1] : g_stat_twiddle_pows[{ntt_parameters.n}>>1];
+"""
+                c_R2_twiddle1_twiddle2_assign = \
+f"""
+                twiddle1 = inv ? g_stat_inv_twiddle_pows[barrett_reduce_pow(sub_trans_idx*stride)] : g_stat_twiddle_pows[barrett_reduce_pow(sub_trans_idx*stride)];
+                twiddle2 = inv ? g_stat_inv_twiddle_pows[barrett_reduce_pow(sub_trans_idx*stride)] : g_stat_twiddle_pows[barrett_reduce_pow(sub_trans_idx*stride + {ntt_parameters.n}>>1)];
+"""
+
+        ############################################################
 
         c_fast_fixed_r2 = \
 f"""
@@ -347,61 +461,17 @@ f"""
     for (int i = 0; i < {ntt_parameters.n}; i++) {self.sub_oc}
         y[i] = x[i];
     {self.sub_cc}
-{self.sub_pc}if LUT_BASED == 0
-    {self.sub_pc}if SEPARATE_INV_DEF == 1
-        int half_rot = {nt.a_pow_b_mod_m(ntt_parameters.g, ntt_parameters.n>>1, ntt_parameters.mod)};
-    {self.sub_pc}else
-        {self.sub_co} Use dynamic inv
-        int half_rot = inv ? {nt.a_pow_b_mod_m(ntt_parameters.g_inv, ntt_parameters.n>>1, ntt_parameters.mod)} : {nt.a_pow_b_mod_m(ntt_parameters.g, ntt_parameters.n>>1, ntt_parameters.mod)};
-    {self.sub_pc}endif
-    int stride_twiddle;
-    int running_twiddle_1;
-{self.sub_pc}else
-    {self.sub_pc}if SEPARATE_INV_DEF == 1
-        {self.sub_co} This arg is forward_impl from python
-        {self.sub_pc}if {int(forward_impl)}
-            int half_rot = g_stat_twiddle_pows[{ntt_parameters.n}>>1];
-        {self.sub_pc}else
-            int half_rot = g_stat_inv_twiddle_pows[{ntt_parameters.n}>>1];
-        {self.sub_pc}endif
-    {self.sub_pc}else
-        int half_rot = inv ? g_stat_inv_twiddle_pows[{ntt_parameters.n}>>1] : g_stat_twiddle_pows[{ntt_parameters.n}>>1];
-    {self.sub_pc}endif
-{self.sub_pc}endif
+    {c_R2_half_rot_init}
     for (int stride = {ntt_parameters.n}>>1; stride >= 1; stride >>= 1) {self.sub_oc}
         cur_size = stride<<1;
-{self.sub_pc}if LUT_BASED == 0
-    {self.sub_pc}if SEPARATE_INV_DEF == 1
-        stride_twiddle = a_pow_b_mod_m({ntt_parameters.g}, stride);
-    {self.sub_pc}else
-        stride_twiddle = a_pow_b_mod_m((inv ? {ntt_parameters.g_inv} : {ntt_parameters.g}), stride);
-    {self.sub_pc}endif
-        running_twiddle_1 = 1;
-{self.sub_pc}endif
-        {self.sub_co} For each of the "self.sub-transforms" in the CT butterfly
+        {c_R2_stride_twiddle}
+        {c_R2_running_twiddle_1_init}
+        {self.sub_co} For each of the "sub-transforms" in the CT butterfly
         for (int sub_trans_idx = 0; sub_trans_idx < {ntt_parameters.n}/cur_size; sub_trans_idx++) {self.sub_oc}
             {self.sub_co} We take steps within our sub transform
             for (int step = 0; step < stride; step++) {self.sub_oc}
                 cur_idx = sub_trans_idx*cur_size + step;
-{self.sub_pc}if LUT_BASED == 0
-                twiddle1 = running_twiddle_1;
-                running_twiddle_1 = barrett_reduce(stride_twiddle * running_twiddle_1);
-                {self.sub_co} Twiddle 2 is offset half a rotation from twiddle 1
-                twiddle2 = barrett_reduce(twiddle1 * half_rot);
-{self.sub_pc}else {self.sub_co} LUT
-    {self.sub_pc}if SEPARATE_INV_DEF == 1
-        {self.sub_pc}if {int(forward_impl)}
-                twiddle1 = g_stat_twiddle_pows[barrett_reduce_pow(sub_trans_idx*stride)];
-                twiddle2 = g_stat_twiddle_pows[barrett_reduce_pow(sub_trans_idx*stride + {ntt_parameters.n}>>1)];
-        {self.sub_pc}else
-                twiddle1 = g_stat_inv_twiddle_pows[barrett_reduce_pow(sub_trans_idx*stride)];
-                twiddle2 = g_stat_inv_twiddle_pows[barrett_reduce_pow(sub_trans_idx*stride + {ntt_parameters.n}>>1)];
-        {self.sub_pc}endif
-    {self.sub_pc}else
-                twiddle1 = inv ? g_stat_inv_twiddle_pows[barrett_reduce_pow(sub_trans_idx*stride)] : g_stat_twiddle_pows[barrett_reduce_pow(sub_trans_idx*stride)];
-                twiddle2 = inv ? g_stat_inv_twiddle_pows[barrett_reduce_pow(sub_trans_idx*stride)] : g_stat_twiddle_pows[barrett_reduce_pow(sub_trans_idx*stride + {ntt_parameters.n}>>1)];
-    {self.sub_pc}endif
-{self.sub_pc}endif
+                {c_R2_twiddle1_twiddle2_assign}
                 y[cur_idx + stride] = barrett_reduce(y[cur_idx] + y[cur_idx + stride] * twiddle2);
                 y[cur_idx] = barrett_reduce(y[cur_idx] + y[cur_idx + stride] * twiddle1);
             {self.sub_cc}
@@ -409,6 +479,86 @@ f"""
     {self.sub_cc}
 """
 
+        ############################################################
+        # String substitutions into general loop structure for N2
+        ############################################################
+
+        c_MR_pow_defs = ""
+        c_MR_base_ij_set = ""
+        c_MR_common_pow_j_2_init = ""
+        c_MR_common_pow_j_2_assn = ""
+        c_MR_common_pow_i_2_init = ""
+        c_MR_common_pow_i_2_assn = ""
+        c_MR_common_pow_j_3_init = ""
+        c_MR_assn_y = ""
+
+        if not self.search_space_point.is_lut:
+            c_MR_common_pow_j_2_init = \
+f"""
+            running_pow_j_2 = 1;
+"""
+            c_MR_common_pow_j_2_assn = \
+f"""
+            running_pow_j_2 = barrett_reduce(running_pow_j_2 * base_j_1);
+"""
+            c_MR_common_pow_i_2_init = \
+f"""
+                running_pow_i_2 = 1;
+"""
+            c_MR_common_pow_i_2_assn = \
+f"""
+                    running_pow_i_2 = barrett_reduce(running_pow_i_2 * base_i_1);
+"""
+            c_MR_common_pow_j_3_init = \
+f"""
+                    running_pow_j_3 = 1;
+"""
+            c_MR_pow_defs = \
+f"""
+    int base_j_1; {self.sub_co} With n_cur/DIM
+    int running_pow_j_2; {self.sub_co} With above ^ni
+    int running_pow_j_3; {self.sub_co} With above ^butterfly_j
+    int base_i_1; {self.sub_co} With dim/g_stat_prime_factors[fact_cnt]
+    int running_pow_i_2; {self.sub_co} With above ^butterfly_i
+"""
+            c_MR_assn_y = \
+f"""
+                        int red1 = barrett_reduce(running_pow_j_3 * running_pow_i_2);
+                        int red2 = barrett_reduce(red2 * y_t[butterfly_j]);
+                        y[dst_idx] =  barrett_reduce(y[dst_idx] + red2);
+                        running_pow_j_3 = barrett_reduce(running_pow_j_3 * running_pow_j_2);
+"""
+            if self.search_space_point.separate_inv_impl:
+                c_MR_base_ij_set = \
+f"""
+            base_j_1 = a_pow_b_mod_m({ntt_parameters.g}, n_cur/{ntt_parameters.n});
+            base_i_1 = a_pow_b_mod_m({ntt_parameters.g}, n_cur/g_stat_prime_factors[fact_cnt]);
+"""
+            else:
+                c_MR_base_ij_set = \
+f"""
+            base_j_1 = a_pow_b_mod_m((inv ? {ntt_parameters.g_inv} : {ntt_parameters.g}), n_cur/{ntt_parameters.n});
+            base_i_1 = a_pow_b_mod_m((inv ? {ntt_parameters.g_inv} : {ntt_parameters.g}), n_cur/g_stat_prime_factors[fact_cnt]);
+"""
+        else:
+            if self.search_space_point.separate_inv_impl:
+                if forward_impl:
+                    c_MR_assn_y = \
+f"""
+                        y[dst_idx] =  barrett_reduce(y[dst_idx] + y_t[butterfly_j] * g_stat_twiddle_pows[barrett_reduce_pow((n_cur/{ntt_parameters.n})*ni*butterfly_j + (butterfly_i * {ntt_parameters.n}/g_stat_prime_factors[fact_cnt]))]);
+"""
+                else:
+                    c_MR_assn_y = \
+f"""
+                        y[dst_idx] =  barrett_reduce(y[dst_idx] + y_t[butterfly_j] * g_stat_inv_twiddle_pows[barrett_reduce_pow((n_cur/{ntt_parameters.n})*ni*butterfly_j + (butterfly_i * {ntt_parameters.n}/g_stat_prime_factors[fact_cnt]))]);
+"""
+            else:
+                c_MR_assn_y = \
+f"""
+                        y[dst_idx] =  barrett_reduce(y[dst_idx] + y_t[butterfly_j] * (inv ? g_stat_inv_twiddle_pows[barrett_reduce_pow((n_cur/{ntt_parameters.n})*ni*butterfly_j + (butterfly_i * {ntt_parameters.n}/g_stat_prime_factors[fact_cnt]))] : g_stat_twiddle_pows[barrett_reduce_pow((n_cur/{ntt_parameters.n})*ni*butterfly_j + (butterfly_i * {ntt_parameters.n}/g_stat_prime_factors[fact_cnt]))]));
+"""
+
+        ############################################################
         # TODO how to avoid non-constant iterator over prime factors?
         # Is a static const sufficient?
         c_fast_mr = \
@@ -424,28 +574,14 @@ f"""
     for (int i = 0; i < {ntt_parameters.n}; i++) {self.sub_oc}
         y[i] = x[i];
     {self.sub_cc}
-{self.sub_pc}if LUT_BASED == 0
-    int base_j_1; {self.sub_co} With n_cur/DIM
-    int running_pow_j_2; {self.sub_co} With above ^ni
-    int running_pow_j_3; {self.sub_co} With above ^butterfly_j
-    int base_i_1; {self.sub_co} With dim/g_stat_prime_factors[fact_cnt]
-    int running_pow_i_2; {self.sub_co} With above ^butterfly_i
-{self.sub_pc}endif
+    {c_MR_pow_defs}
     {self.sub_co} for (int n2 = n_cur/g_stat_prime_factors[fact_cnt]; n2 >= 1; n2 /= (g_stat_prime_factors[fact_cnt])) {self.sub_oc}
     {self.sub_co} Iterates over prime factors. Termination at bottom of loop
     {self.sub_while} (1) {self.sub_oc}
-        {self.sub_co} For each of the "self.sub-transforms" in the CT butterfly
+        {self.sub_co} For each of the "sub-transforms" in the CT butterfly
         for (int n1 = 0; n1 < orig_size/n_cur; n1++) {self.sub_oc}
-{self.sub_pc}if LUT_BASED == 0
-    {self.sub_pc}if SEPARATE_INV_DEF == 1
-            base_j_1 = a_pow_b_mod_m({ntt_parameters.g}, n_cur/{ntt_parameters.n});
-            base_i_1 = a_pow_b_mod_m({ntt_parameters.g}, n_cur/g_stat_prime_factors[fact_cnt]);
-    {self.sub_pc}else
-            base_j_1 = a_pow_b_mod_m((inv ? {ntt_parameters.g_inv} : {ntt_parameters.g}), n_cur/{ntt_parameters.n});
-            base_i_1 = a_pow_b_mod_m((inv ? {ntt_parameters.g_inv} : {ntt_parameters.g}), n_cur/g_stat_prime_factors[fact_cnt]);
-    {self.sub_pc}endif
-            running_pow_j_2 = 1;
-{self.sub_pc}endif
+            {c_MR_common_pow_j_2_init}
+            {c_MR_base_ij_set}
             {self.sub_co} We take steps within our self.sub transform
             for (int ni = 0; ni < n2; ni++) {self.sub_oc}
                 {self.sub_co} TODO any way around this dynamic memory allocation?
@@ -456,41 +592,18 @@ f"""
                 {self.sub_cc}
                 {self.sub_co} We have N^2 terms to add where N is the prime factor
                 {self.sub_co} Since N sums into each N node of the self.sub transform
-{self.sub_pc}if LUT_BASED == 0
-                running_pow_i_2 = 1;
-{self.sub_pc}endif
+                {c_MR_common_pow_i_2_init}
                 for (int butterfly_i = 0; butterfly_i < g_stat_prime_factors[fact_cnt]; butterfly_i++) {self.sub_oc}
-{self.sub_pc}if LUT_BASED == 0
-                    running_pow_j_3 = 1;
-{self.sub_pc}endif
+                    {c_MR_common_pow_j_3_init}
                     for (int butterfly_j = 0; butterfly_j < g_stat_prime_factors[fact_cnt]; butterfly_j++) {self.sub_oc}
                         dst_idx = n1*n_cur + ni + butterfly_i*n2;
-{self.sub_pc}if LUT_BASED == 0
-                        int red1 = barrett_reduce(running_pow_j_3 * running_pow_i_2);
-                        int red2 = barrett_reduce(red2 * y_t[butterfly_j]);
-                        y[dst_idx] =  barrett_reduce(y[dst_idx] + red2);
-                        running_pow_j_3 = barrett_reduce(running_pow_j_3 * running_pow_j_2);
-{self.sub_pc}else {self.sub_co} LUT
-    {self.sub_pc}if SEPARETE_INV_DEF == 1
-        {self.sub_pc}if {int(forward_impl)}
-                        y[dst_idx] =  barrett_reduce(y[dst_idx] + y_t[butterfly_j] * g_stat_twiddle_pows[barrett_reduce_pow((n_cur/{ntt_parameters.n})*ni*butterfly_j + (butterfly_i * {ntt_parameters.n}/g_stat_prime_factors[fact_cnt]))]);
-        {self.sub_pc}else
-                        y[dst_idx] =  barrett_reduce(y[dst_idx] + y_t[butterfly_j] * g_stat_inv_twiddle_pows[barrett_reduce_pow((n_cur/{ntt_parameters.n})*ni*butterfly_j + (butterfly_i * {ntt_parameters.n}/g_stat_prime_factors[fact_cnt]))]);
-        {self.sub_pc}endif
-    {self.sub_pc}else
-                        y[dst_idx] =  barrett_reduce(y[dst_idx] + y_t[butterfly_j] * (inv ? g_stat_inv_twiddle_pows[barrett_reduce_pow((n_cur/{ntt_parameters.n})*ni*butterfly_j + (butterfly_i * {ntt_parameters.n}/g_stat_prime_factors[fact_cnt]))] : g_stat_twiddle_pows[barrett_reduce_pow((n_cur/{ntt_parameters.n})*ni*butterfly_j + (butterfly_i * {ntt_parameters.n}/g_stat_prime_factors[fact_cnt]))]));
-    {self.sub_pc}endif
-{self.sub_pc}endif
+                        {c_MR_assn_y}
                     {self.sub_cc}
-{self.sub_pc}if LUT_BASED == 0
-                    running_pow_i_2 = barrett_reduce(running_pow_i_2 * base_i_1);
-{self.sub_pc}endif
+                    {c_MR_common_pow_i_2_assn}
                 {self.sub_cc}
                 free(y_t);
             {self.sub_cc}
-{self.sub_pc}if LUT_BASED == 0
-            running_pow_j_2 = barrett_reduce(running_pow_j_2 * base_j_1);
-{self.sub_pc}endif
+            {c_MR_common_pow_j_2_assn}
         {self.sub_cc}
         {self.sub_co} Size for next iter
         n_cur = n2;

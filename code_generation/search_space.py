@@ -3,15 +3,6 @@ import subprocess
 import re
 
 class Search_Space: 
-    type_build_str = "NTT_TYPE"
-    is_lut_build_str = "LUT_BASED"
-    fixed_radix_build_str = "FAST_FIXED"
-    mixed_radix_build_str = "FAST_MIXED"
-    max_mixed_radix_build_str = "FAST_MIXED"
-    max_mixed_radix_build_str = "MAX_RADIX"
-    is_parallel_build_str = "PARALLEL"
-    separate_inv_impl_str = "SEPARATE_INV_DEF"
-
     # These parameters set by running the test suite
     code_size = 0
     max_heap = 0
@@ -37,13 +28,6 @@ class Search_Space:
         PROG_NAME = "./ntt_test" 
         # bash_command_build = "make clean && make CFLAGS=\"-O0 -g" 
         bash_command_build = "make clean && make CFLAGS=\"-O3 " 
-        bash_command_build += " -D" + self.type_build_str            + "=" + str(self.type_str)
-        bash_command_build += " -D" + self.is_lut_build_str          + "=" + str(int(self.is_lut))
-        bash_command_build += " -D" + self.fixed_radix_build_str     + "=" + str(int(self.fixed_radix))
-        bash_command_build += " -D" + self.mixed_radix_build_str     + "=" + str(int(self.mixed_radix))
-        bash_command_build += " -D" + self.max_mixed_radix_build_str + "=" + str(self.max_mixed_radix)
-        bash_command_build += " -D" + self.is_parallel_build_str     + "=" + str(int(self.is_parallel))
-        bash_command_build += " -D" + self.separate_inv_impl_str     + "=" + str(int(self.separate_inv_impl))
         if (self.is_parallel == 1):
             bash_command_build += " -fopenmp "
         bash_command = bash_command_build + "\"" 
@@ -62,6 +46,7 @@ class Search_Space:
         # valgrind --tool=cachegrind,massif,callgrind 
         # Can then run callgrind_annotate or ms_print for the given callgrind log 
 
+        '''
         bash_command = "valgrind --tool=massif " + PROG_NAME 
         output = self.run_bash_cmd(bash_command) 
         # Parse the massif output 
@@ -69,12 +54,10 @@ class Search_Space:
         output = self.run_bash_cmd(bash_command) 
         massif_pattern = r"(\d+)\s+([\d,]+)\s+([\d,]+)\s+([\d,]+)\s+([\d,]+)\s+([\d,]+)"
         # The last line looks like this:
-        '''
-        --------------------------------------------------------------------------------
-          n        time(i)         total(B)   useful-heap(B) extra-heap(B)    stacks(B)
-        --------------------------------------------------------------------------------
-         10        206,103            2,376            2,320            56            0
-        '''
+        # --------------------------------------------------------------------------------
+        #   n        time(i)         total(B)   useful-heap(B) extra-heap(B)    stacks(B)
+        # --------------------------------------------------------------------------------
+        #  10        206,103            2,376            2,320            56            0
         # We want the total(B) argument
         matches = re.findall(massif_pattern, output)
         peak_match = re.findall("(\d+)\s+\(peak\)", output)
@@ -119,6 +102,7 @@ class Search_Space:
             matches = re.findall(r"TIME\:\s+(\d+)\s+us", output)
             running_sum = running_sum + int(matches[0])
         self.runtime = (running_sum / NUM_TIME_RERUN)
+        '''
 
     def __init__(self, type_str, is_lut, fixed_radix, max_mixed_radix, is_parallel, separate_inv_impl): 
         self.type_str = type_str 
@@ -144,7 +128,8 @@ def build_search_space():
         for is_lut in [False, True]:
             # TODO temp skip non-lut parallelization for failures due to difficult access
             if is_lut:
-                for is_parallel in [False, True]:
+                # for is_parallel in [False, True]:
+                for is_parallel in [False]:
                     new_data_obj = Search_Space(NTT_TYPE, is_lut, False, 1, is_parallel, separate_inv_impl) 
                     search_space_objs.append(new_data_obj) 
             else:
