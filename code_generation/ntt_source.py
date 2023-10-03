@@ -29,8 +29,10 @@ class Ntt_Source:
             file.write("#ifndef NTT_H\n#define NTT_H\n")
             # TODO stdlib not needed?
             file.write("#include <stdlib.h>\n")
-            if self.search_space_point.is_parallel:
+            if self.search_space_point.is_omp:
                 file.write("#include <omp.h>\n")
+            if self.search_space_point.is_avx:
+                file.write("#include <immintrin.h>\n")
             temp_str = \
 """
 // Constants
@@ -171,6 +173,26 @@ int barrett_reduce(int a) {self.sub_oc}
 {self.sub_cc}
 """
 
+        c_barrett_reduction_avx = ""
+        if self.search_space_point.is_avx:
+            c_barrett_reduction_avx = \
+f"""
+void barrett_reduce_avx(__m256i *a) {self.sub_oc}
+  __m256i q, t, m, m2, gt, ts; 
+  __m256i barrett_r_avx = _mm256_set1_epi32({self.ntt_parameters.barrett_r})
+  __m256i barrett_k_avx = _mm256_set1_epi32({self.ntt_parameters.barrett_k})
+  __m256i mod_avx       = _mm256_set1_epi32({self.ntt_parameters.mod})
+  __m256i mod_min1_avx  = _mm256_set1_epi32({self.ntt_parameters.mod}-1)
+  m  = _mm256_mullo_epi32(*a, barrett_r_avx);
+  q  = _mm256_slli_epi32(m, barrett_k_avx);
+  m2 = _mm256_mullo_epi32(q, mod_avx);
+  t = _mm256_sub_epi32(*a, m2);
+  gt = _mm256_cmpgt_epi32(t, mod_min1_avx);
+  ts = _mm256_sub_epi32(t, mod_avx);
+  *a = _mm256_blendv_epi8(t, ts, gt);
+{self.sub_cc}
+"""
+
         # Reduces the LUT mapping i*j instead of doing the mod operation
         c_power_barrett_reduction = \
 f"""
@@ -296,10 +318,27 @@ void ntt_impl_inv(int *x, int *y, int inv) {self.sub_oc}
         # String substitutions into general loop structure for N2
         ############################################################
         c_N2_omp_pragma = ""
-        if self.search_space_point.is_parallel:
+        if self.search_space_point.is_omp:
             c_N2_omp_pragma = \
 f"""
 {self.sub_pc}pragma omp parallel for
+"""
+        # Initialize AVX sums fo rthe inner loop
+        c_N2_avx_sum_init = ""
+        c_N2_inner_loop_structure = ""
+        # 8x32 bit integers in a 256 avx unit
+        avx_reg_width = 8;
+        if self.search_space.is_avx:
+            c_N2_avx_sum_init = \
+f"""
+        __m256i avx_result, avx_reduction, vec_a, vec_b, hsum;
+        int avx_twiddle_arr[{avx_reg_width}];
+        char avx_load_cntr = 0;
+         __m256i sum = _mm256_setzero_si256(); // Initialize sum to zero
+"""
+        else:
+            c_N2_inner_loop_structure = \
+f"""
 """
 
         c_N2_no_lut_twiddle_def = ""
@@ -318,7 +357,30 @@ f"""
     int twiddle_fact = 1; {self.sub_co} Geometrically increasing factor in each loop iteration
     int temp;
 """
-            c_N2_inner_impl = \
+            if self.search_space_point.is_avx:
+                c_N2_inner_impl = \
+f"""
+            if (avx_load_cntr == {avx_reg_width}) {
+                {self.sub_co} Load AVX
+                vec_a = _mm256_loadu_si256((__m256i*)avx_twiddle_arr);
+                vec_b = _mm256_loadu_si256((__m256i*)&x[j - {avx_reg_width}]);
+                {self.sub_co} Perform AVX operation
+                result = _mm256_mullo_epi32(vec_a, vec_b);
+                {self.sub_co} Perform AVX reduction
+                barrett_reduce_avx(&result);
+                hsum = _mm256_hadd_epi32(result, result);
+                hsum = _mm256_hadd_epi32(hsum, hsum);
+                y[i] = y[i] + _mm256_extract_epi32(hsum, 0);
+                {self.sub_co} Reduce vector component-wise sum
+                y[i] = barrett_reduce(y[i]);
+                avx_load_cntr = 0;
+            } else {
+                twiddle = j == 0 ? 1 : barrett_reduce(twiddle * twiddle_fact);
+                avx_twiddle_arr[avx_load_cntr++] = twiddle;
+            }
+"""
+            else:
+                c_N2_inner_impl = \
 f"""
             twiddle = j == 0 ? 1 : barrett_reduce(twiddle * twiddle_fact);
             temp = barrett_reduce(x[j] * twiddle);
@@ -364,6 +426,7 @@ f"""
     {c_N2_no_lut_twiddle_def}
     {c_N2_omp_pragma}
     for (int i = 0; i < {ntt_parameters.n}; i++) {self.sub_oc}
+        {c_N2_avx_sum_init}
         {c_N2_inner_twiddle_init}
         for (int j = 0; j < {ntt_parameters.n}; j++) {self.sub_oc}
             {c_N2_inner_impl}
