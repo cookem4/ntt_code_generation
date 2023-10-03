@@ -39,14 +39,15 @@ class Code_Gen_Params:
 
 def main(args):
     # Access command-line arguments using args.argument_name
-    max_heap_size = int(args.heap)
-    max_code_size = int(args.code)
-    num_threads = int(args.threads)
-    max_stack_size = int(args.stack)
+    # max_heap_size = int(args.heap)
+    # max_code_size = int(args.code)
+    # num_threads = int(args.threads)
+    # max_stack_size = int(args.stack)
     dimension = int(args.dimension)
-    max_mem_footprint = int(args.memory)
+    # max_mem_footprint = int(args.memory)
     
-    code_gen = Code_Gen_Params(dimension, max_heap_size, max_code_size, num_threads, max_stack_size, max_mem_footprint)
+    # code_gen = Code_Gen_Params(dimension, max_heap_size, max_code_size, num_threads, max_stack_size, max_mem_footprint)
+    code_gen = Code_Gen_Params(dimension, 0, 0, 0, 0, 0)
     ntt_parameters = nt.NTT_Params(dimension)
 
     # The entire search space. Don't want to traverse all of it
@@ -89,12 +90,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Code generation in C for efficient arbitrary-radix NTT implementations")
     
     # Add arguments for max heap size, max code size, number of threads, and max stack size
-    parser.add_argument("-p", "--heap")
-    parser.add_argument("-c", "--code")
-    parser.add_argument("-t", "--threads")
-    parser.add_argument("-s", "--stack")
+    # parser.add_argument("-p", "--heap")
+    # parser.add_argument("-c", "--code")
+    # parser.add_argument("-t", "--threads")
+    # parser.add_argument("-s", "--stack")
     parser.add_argument("-d", "--dimension")
-    parser.add_argument("-m", "--memory")
+    # parser.add_argument("-m", "--memory")
     
     args = parser.parse_args()
     main(args)
