@@ -175,6 +175,7 @@ int barrett_reduce(int a) {self.sub_oc}
 
         c_barrett_reduction_avx = ""
         if self.search_space_point.is_avx:
+# TODO what to do about type extension here if we go from int to long int?? With a big modulus
             c_barrett_reduction_avx = \
 f"""
 const static __m256i g_stat_barrett_r_avx   = _mm256_set1_epi32({self.ntt_parameters.barrett_r});
