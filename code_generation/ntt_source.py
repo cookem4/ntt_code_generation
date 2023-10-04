@@ -6,6 +6,7 @@
 
 import ntt_params as nt
 import search_space as ss
+import math
 import pdb
 
 # This class should be able to build out the source code given a set of NTT
@@ -20,6 +21,8 @@ class Ntt_Source:
     sub_cc = "}"
     sub_co = "//"
     sub_nl = "\\n"
+    # 8x32 bit integers in a 256 avx unit
+    avx_reg_width = 8;
 
     def generate_target(self):
         # Use search space point to create code
@@ -178,24 +181,23 @@ int barrett_reduce(int a) {self.sub_oc}
 # TODO what to do about type extension here if we go from int to long int?? With a big modulus
             c_barrett_reduction_avx = \
 f"""
-const static __m256i g_stat_barrett_r_avx   = _mm256_set1_epi32({self.ntt_parameters.barrett_r});
-const static __m256i g_stat_barrett_k_avx   = _mm256_set1_epi32({self.ntt_parameters.barrett_k});
-const static __m256i g_stat_mod_avx         = _mm256_set1_epi32({self.ntt_parameters.mod});
-void barrett_reduce_avx(__m256i *a) {self.sub_oc}
+__m256i barrett_reduce_avx(__m256i a) {self.sub_oc}
+  __m256i barrett_r_avx   = _mm256_set1_epi32({self.ntt_parameters.barrett_r});
+  __m256i mod_avx         = _mm256_set1_epi32({self.ntt_parameters.mod});
   __m256i q, t;
-  __m256i mod_min1_avx  = _mm256_set1_epi32({self.ntt_parameters.mod}-1)
 
-  {self.sub_co} Calculate q = (a * barrett_r) >> barrett_k
-  q = _mm256_mullo_epi32(a, g_stat_barrett_r_avx);
-  q = _mm256_srli_epi32(q, g_stat_barrett_k_avx);
+  {self.sub_co} Calculate q = (a * barrett_r) >> barrett_k;
+  q = _mm256_mullo_epi32(a, barrett_r_avx);
+  q = _mm256_srli_epi32(q, {self.ntt_parameters.barrett_k});
 
-  {self.sub_co} Calculate t = a - (q * mod)
-  t = _mm256_mullo_epi32(q, g_stat_mod_avx);
+  {self.sub_co} Calculate t = a - (q * mod);
+  t = _mm256_mullo_epi32(q, mod_avx);
   t = _mm256_sub_epi32(a, t);
 
   {self.sub_co} Check if t is greater than or equal to mod
-  __m256i cmp = _mm256_cmpgt_epi32(t, g_stat_mod_avx);
-  t = _mm256_sub_epi32(t, _mm256_and_si256(cmp, g_stat_mod_avx));
+  __m256i cmp = _mm256_cmpgt_epi32(t, mod_avx);
+  t = _mm256_sub_epi32(t, _mm256_and_si256(cmp, mod_avx));
+  return t;
 {self.sub_cc}
 """
 
@@ -272,6 +274,7 @@ f"""
             c_static_inv_pow_lut = ""
 
         c_ntt_impl_tot_str = c_barrett_reduction + \
+                             c_barrett_reduction_avx + \
                              c_power_barrett_reduction + \
                              c_a_pow_b_mod_m + \
                              c_prime_fact_lut + \
@@ -330,38 +333,55 @@ f"""
 {self.sub_pc}pragma omp parallel for
 """
         # Initialize AVX sums fo rthe inner loop
-        c_N2_avx_sum_init = ""
+        c_N2_avx_init = ""
         c_N2_inner_loop_structure = ""
         c_N2_avx_reg_accum = ""
-        c_N2_avx_cc = ""
-        # 8x32 bit integers in a 256 avx unit
-        avx_reg_width = 8;
-        if self.search_space.is_avx:
-            c_N2_avx_cc = f"{self.sub_cc}"
-            c_N2_avx_sum_init = \
+        c_N2_avx_parallel_init = ""
+        if self.search_space_point.is_avx:
+            if self.search_space_point.is_omp:
+                c_N2_avx_parallel_init = \
 f"""
-        __m256i avx_result, avx_reduction, vec_a, vec_b, hsum;
-        int avx_twiddle_arr[{avx_reg_width}];
-        char avx_load_cntr = 0;
-         __m256i sum = _mm256_setzero_si256(); // Initialize sum to zero
+        __m256i avx_result, avx_reduction, vec_a, vec_b;
+        int avx_twiddle_arr[{self.avx_reg_width}];
+        int hsum[8];
+        int temp_sum;
+        char avx_load_cntr;
+"""
+            else:
+                c_N2_avx_init = \
+f"""
+    __m256i avx_result, avx_reduction, vec_a, vec_b;
+    int avx_twiddle_arr[{self.avx_reg_width}];
+    int hsum[8];
+    int temp_sum;
+    char avx_load_cntr;
 """
             c_N2_avx_reg_accum = \
 f"""
-            if (avx_load_cntr == {avx_reg_width}) {
-                {self.sub_co} Load AVX
+            {self.sub_co} If on last of a block of 8 or if on last iteration of loop for non multiple of 8 dimension
+            if (avx_load_cntr == {self.avx_reg_width}) {self.sub_oc}
+                // Load AVX
                 vec_a = _mm256_loadu_si256((__m256i*)avx_twiddle_arr);
-                vec_b = _mm256_loadu_si256((__m256i*)&x[j - {avx_reg_width}]);
-                {self.sub_co} Perform AVX operation
-                result = _mm256_mullo_epi32(vec_a, vec_b);
-                {self.sub_co} Perform AVX reduction
-                barrett_reduce_avx(&result);
-                hsum = _mm256_hadd_epi32(result, result);
-                hsum = _mm256_hadd_epi32(hsum, hsum);
-                y[i] = y[i] + _mm256_extract_epi32(hsum, 0);
-                {self.sub_co} Reduce vector component-wise sum
+                vec_b = _mm256_loadu_si256((__m256i*)&x[j - 7]);
+                // Perform AVX operation
+                avx_result = _mm256_mullo_epi32(vec_a, vec_b);
+                // Perform AVX reduction
+                avx_result = barrett_reduce_avx(avx_result);
+                _mm256_storeu_si256((__m256i*)hsum, avx_result);
+                temp_sum = 0;
+                temp_sum += hsum[0];
+                temp_sum += hsum[1];
+                temp_sum += hsum[2];
+                temp_sum += hsum[3];
+                temp_sum += hsum[4];
+                temp_sum += hsum[5];
+                temp_sum += hsum[6];
+                temp_sum += hsum[7];
+                y[i] = y[i] + temp_sum;
+                // Reduce vector component-wise sum
                 y[i] = barrett_reduce(y[i]);
                 avx_load_cntr = 0;
-            } else {
+            {self.sub_cc}
 """
         else:
             c_N2_inner_loop_structure = \
@@ -387,8 +407,8 @@ f"""
             if self.search_space_point.is_avx:
                 c_N2_inner_impl = \
 f"""
-                twiddle = j == 0 ? 1 : barrett_reduce(twiddle * twiddle_fact);
-                avx_twiddle_arr[avx_load_cntr++] = twiddle;
+            twiddle = j == 0 ? 1 : barrett_reduce(twiddle * twiddle_fact);
+            avx_twiddle_arr[avx_load_cntr++] = twiddle;
 """
             else:
                 c_N2_inner_impl = \
@@ -415,7 +435,7 @@ f"""
                     if self.search_space_point.is_avx:
                         c_N2_inner_impl = \
 f"""
-                avx_twiddle_arr[avx_load_cntr++] = g_stat_twiddle_pows[barrett_reduce_pow(i*j)]);
+            avx_twiddle_arr[avx_load_cntr++] = g_stat_twiddle_pows[barrett_reduce_pow(i*j)];
 """
                     else:
                         c_N2_inner_impl = \
@@ -426,7 +446,7 @@ f"""
                     if self.search_space_point.is_avx:
                         c_N2_inner_impl = \
 f"""
-                avx_twiddle_arr[avx_load_cntr++] = g_stat_inv_twiddle_pows[barrett_reduce_pow(i*j)]);
+            avx_twiddle_arr[avx_load_cntr++] = g_stat_inv_twiddle_pows[barrett_reduce_pow(i*j)];
 """
                     else:
                         c_N2_inner_impl = \
@@ -437,7 +457,7 @@ f"""
                 if self.search_space_point.is_avx:
                     c_N2_inner_impl = \
 f"""
-                avx_twiddle_arr[avx_load_cntr++] = inv ? g_stat_inv_twiddle_pows[barrett_reduce_pow(i*j)] : g_stat_twiddle_pows[barrett_reduce_pow(i*j)];
+            avx_twiddle_arr[avx_load_cntr++] = inv ? g_stat_inv_twiddle_pows[barrett_reduce_pow(i*j)] : g_stat_twiddle_pows[barrett_reduce_pow(i*j)];
 """
                 else:
                     c_N2_inner_impl = \
@@ -453,14 +473,14 @@ f"""
         y[i] = 0;
     {self.sub_cc}
     {c_N2_no_lut_twiddle_def}
+    {c_N2_avx_init}
     {c_N2_omp_pragma}
     for (int i = 0; i < {ntt_parameters.n}; i++) {self.sub_oc}
-        {c_N2_avx_sum_init}
+        {c_N2_avx_parallel_init}
         {c_N2_inner_twiddle_init}
         for (int j = 0; j < {ntt_parameters.n}; j++) {self.sub_oc}
-            {c_N2_avx_reg_accum}
             {c_N2_inner_impl}
-            {c_N2_avx_cc}
+            {c_N2_avx_reg_accum}
         {self.sub_cc}
         {c_N2_outer_twiddle_incr}
     {self.sub_cc}
@@ -737,4 +757,6 @@ f"""
                 dimension += 1
                 self.ntt_parameters = nt.NTT_Params(dimension)
             print("Dimension expanded to ", dimension)
-
+        # For AVX, expand to multiple of 8
+        if (self.search_space_point.type_str == "TYPE_N2" and self.search_space_point.is_avx):
+            self.ntt_parameters = nt.NTT_Params(self.avx_reg_width * math.ceil(self.ntt_parameters.n / self.avx_reg_width))

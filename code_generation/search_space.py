@@ -28,8 +28,10 @@ class Search_Space:
         PROG_NAME = "./ntt_test" 
         # bash_command_build = "make clean && make CFLAGS=\"-O0 -g" 
         bash_command_build = "make clean && make CFLAGS=\"-O3 " 
-        if (self.is_parallel == 1):
+        if (self.is_omp == 1):
             bash_command_build += " -fopenmp "
+        if (self.is_avx == 1):
+            bash_command_build += " -mavx2 "
         bash_command = bash_command_build + "\"" 
         print(bash_command)
         # Compile the program 
@@ -70,7 +72,7 @@ class Search_Space:
         output = self.run_bash_cmd(bash_command) 
 
         # Skip callgrind if openMP
-        if (self.is_parallel == 0):
+        if (self.is_omp == 0):
             bash_command = "valgrind --tool=callgrind " + PROG_NAME 
             output = self.run_bash_cmd(bash_command) 
             # Parse the massif output 
@@ -102,18 +104,19 @@ class Search_Space:
             running_sum = running_sum + int(matches[0])
         self.runtime = (running_sum / NUM_TIME_RERUN)
 
-    def __init__(self, type_str, is_lut, fixed_radix, max_mixed_radix, is_parallel, separate_inv_impl): 
+    def __init__(self, type_str, is_lut, fixed_radix, max_mixed_radix, is_omp, is_avx, separate_inv_impl): 
         self.type_str = type_str 
         self.is_lut = is_lut 
         self.fixed_radix = fixed_radix 
         self.mixed_radix = 1 if fixed_radix == 0 else 0
         self.max_mixed_radix = max_mixed_radix 
-        self.is_parallel = is_parallel 
+        self.is_avx = is_avx 
+        self.is_omp = is_omp 
         # View code-size/performance tradeoff with separate
         # Forward and inverse implementations. To keep a common
         # Interface regardless use function interfaces
         self.separate_inv_impl = separate_inv_impl 
-        self.variant_name = str(self.type_str) + "_LUT" + str(int(self.is_lut))  + "_F" + str(int(self.fixed_radix)) + "_MR" + str(self.max_mixed_radix) + "_P" + str(int(self.is_parallel)) + "_DI" + str(int(self.separate_inv_impl))
+        self.variant_name = str(self.type_str) + "_LUT" + str(int(self.is_lut)) + "_F" + str(int(self.fixed_radix)) + "_MR" + str(self.max_mixed_radix) + "_P" + str(int(self.is_omp)) + "_AVX" + str(int(self.is_avx)) + "_DI" + str(int(self.separate_inv_impl))
 
 def build_search_space():
     # TODO might want to move these vectors into a file instead of looping over them
@@ -124,23 +127,26 @@ def build_search_space():
     for separate_inv_impl in [False, True]:
         NTT_TYPE = "TYPE_N2"
         for is_lut in [False, True]:
-            # TODO temp skip non-lut parallelization for failures due to difficult access
-            if is_lut:
-                for is_parallel in [False, True]:
-                    new_data_obj = Search_Space(NTT_TYPE, is_lut, False, 1, is_parallel, separate_inv_impl) 
+            for is_avx in [False, True]:
+                # TODO temp skip non-lut parallelization for failures due to difficult access
+                if is_lut:
+                    # TODO temp skip omp with AVX due to not-found race-condition
+                    if not is_avx:
+                        for is_omp in [False, True]:
+                            new_data_obj = Search_Space(NTT_TYPE, is_lut, False, 1, is_omp, is_avx, separate_inv_impl) 
+                            search_space_objs.append(new_data_obj) 
+                else:
+                    new_data_obj = Search_Space(NTT_TYPE, is_lut, False, 1, 0, is_avx, separate_inv_impl) 
                     search_space_objs.append(new_data_obj) 
-            else:
-                new_data_obj = Search_Space(NTT_TYPE, is_lut, False, 1, 0, separate_inv_impl) 
-                search_space_objs.append(new_data_obj) 
         NTT_TYPE = "TYPE_FAST"
         for is_lut in [False, True]:
             for is_fixed_radix in [False, True]:
                 if (is_fixed_radix):
-                    new_data_obj = Search_Space(NTT_TYPE, is_lut, True, 2, 0, separate_inv_impl) 
+                    new_data_obj = Search_Space(NTT_TYPE, is_lut, True, 2, 0, False, separate_inv_impl) 
                     search_space_objs.append(new_data_obj) 
                 else:
                     for max_mixed_radix in mixed_radix_range:
-                        new_data_obj = Search_Space(NTT_TYPE, is_lut, False, max_mixed_radix, 0, separate_inv_impl) 
+                        new_data_obj = Search_Space(NTT_TYPE, is_lut, False, max_mixed_radix, 0, False, separate_inv_impl) 
                         search_space_objs.append(new_data_obj) 
 
     return search_space_objs
