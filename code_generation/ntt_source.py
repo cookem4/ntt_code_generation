@@ -177,19 +177,24 @@ int barrett_reduce(int a) {self.sub_oc}
         if self.search_space_point.is_avx:
             c_barrett_reduction_avx = \
 f"""
+const static __m256i g_stat_barrett_r_avx   = _mm256_set1_epi32({self.ntt_parameters.barrett_r});
+const static __m256i g_stat_barrett_k_avx   = _mm256_set1_epi32({self.ntt_parameters.barrett_k});
+const static __m256i g_stat_mod_avx         = _mm256_set1_epi32({self.ntt_parameters.mod});
 void barrett_reduce_avx(__m256i *a) {self.sub_oc}
-  __m256i q, t, m, m2, gt, ts; 
-  __m256i barrett_r_avx = _mm256_set1_epi32({self.ntt_parameters.barrett_r})
-  __m256i barrett_k_avx = _mm256_set1_epi32({self.ntt_parameters.barrett_k})
-  __m256i mod_avx       = _mm256_set1_epi32({self.ntt_parameters.mod})
+  __m256i q, t;
   __m256i mod_min1_avx  = _mm256_set1_epi32({self.ntt_parameters.mod}-1)
-  m  = _mm256_mullo_epi32(*a, barrett_r_avx);
-  q  = _mm256_slli_epi32(m, barrett_k_avx);
-  m2 = _mm256_mullo_epi32(q, mod_avx);
-  t = _mm256_sub_epi32(*a, m2);
-  gt = _mm256_cmpgt_epi32(t, mod_min1_avx);
-  ts = _mm256_sub_epi32(t, mod_avx);
-  *a = _mm256_blendv_epi8(t, ts, gt);
+
+  {self.sub_co} Calculate q = (a * barrett_r) >> barrett_k
+  q = _mm256_mullo_epi32(a, g_stat_barrett_r_avx);
+  q = _mm256_srli_epi32(q, g_stat_barrett_k_avx);
+
+  {self.sub_co} Calculate t = a - (q * mod)
+  t = _mm256_mullo_epi32(q, g_stat_mod_avx);
+  t = _mm256_sub_epi32(a, t);
+
+  {self.sub_co} Check if t is greater than or equal to mod
+  __m256i cmp = _mm256_cmpgt_epi32(t, g_stat_mod_avx);
+  t = _mm256_sub_epi32(t, _mm256_and_si256(cmp, g_stat_mod_avx));
 {self.sub_cc}
 """
 
@@ -326,15 +331,36 @@ f"""
         # Initialize AVX sums fo rthe inner loop
         c_N2_avx_sum_init = ""
         c_N2_inner_loop_structure = ""
+        c_N2_avx_reg_accum = ""
+        c_N2_avx_cc = ""
         # 8x32 bit integers in a 256 avx unit
         avx_reg_width = 8;
         if self.search_space.is_avx:
+            c_N2_avx_cc = f"{self.sub_cc}"
             c_N2_avx_sum_init = \
 f"""
         __m256i avx_result, avx_reduction, vec_a, vec_b, hsum;
         int avx_twiddle_arr[{avx_reg_width}];
         char avx_load_cntr = 0;
          __m256i sum = _mm256_setzero_si256(); // Initialize sum to zero
+"""
+            c_N2_avx_reg_accum = \
+f"""
+            if (avx_load_cntr == {avx_reg_width}) {
+                {self.sub_co} Load AVX
+                vec_a = _mm256_loadu_si256((__m256i*)avx_twiddle_arr);
+                vec_b = _mm256_loadu_si256((__m256i*)&x[j - {avx_reg_width}]);
+                {self.sub_co} Perform AVX operation
+                result = _mm256_mullo_epi32(vec_a, vec_b);
+                {self.sub_co} Perform AVX reduction
+                barrett_reduce_avx(&result);
+                hsum = _mm256_hadd_epi32(result, result);
+                hsum = _mm256_hadd_epi32(hsum, hsum);
+                y[i] = y[i] + _mm256_extract_epi32(hsum, 0);
+                {self.sub_co} Reduce vector component-wise sum
+                y[i] = barrett_reduce(y[i]);
+                avx_load_cntr = 0;
+            } else {
 """
         else:
             c_N2_inner_loop_structure = \
@@ -360,24 +386,8 @@ f"""
             if self.search_space_point.is_avx:
                 c_N2_inner_impl = \
 f"""
-            if (avx_load_cntr == {avx_reg_width}) {
-                {self.sub_co} Load AVX
-                vec_a = _mm256_loadu_si256((__m256i*)avx_twiddle_arr);
-                vec_b = _mm256_loadu_si256((__m256i*)&x[j - {avx_reg_width}]);
-                {self.sub_co} Perform AVX operation
-                result = _mm256_mullo_epi32(vec_a, vec_b);
-                {self.sub_co} Perform AVX reduction
-                barrett_reduce_avx(&result);
-                hsum = _mm256_hadd_epi32(result, result);
-                hsum = _mm256_hadd_epi32(hsum, hsum);
-                y[i] = y[i] + _mm256_extract_epi32(hsum, 0);
-                {self.sub_co} Reduce vector component-wise sum
-                y[i] = barrett_reduce(y[i]);
-                avx_load_cntr = 0;
-            } else {
                 twiddle = j == 0 ? 1 : barrett_reduce(twiddle * twiddle_fact);
                 avx_twiddle_arr[avx_load_cntr++] = twiddle;
-            }
 """
             else:
                 c_N2_inner_impl = \
@@ -401,17 +411,35 @@ f"""
         else:
             if self.search_space_point.separate_inv_impl:
                 if forward_impl:
-                    c_N2_inner_impl = \
+                    if self.search_space_point.is_avx:
+                        c_N2_inner_impl = \
+f"""
+                avx_twiddle_arr[avx_load_cntr++] = g_stat_twiddle_pows[barrett_reduce_pow(i*j)]);
+"""
+                    else:
+                        c_N2_inner_impl = \
 f"""
             y[i] = barrett_reduce(y[i] + x[j] * g_stat_twiddle_pows[barrett_reduce_pow(i*j)]);
 """
                 else:
-                    c_N2_inner_impl = \
+                    if self.search_space_point.is_avx:
+                        c_N2_inner_impl = \
+f"""
+                avx_twiddle_arr[avx_load_cntr++] = g_stat_inv_twiddle_pows[barrett_reduce_pow(i*j)]);
+"""
+                    else:
+                        c_N2_inner_impl = \
 f"""
             y[i] = barrett_reduce(y[i] + x[j] * g_stat_inv_twiddle_pows[barrett_reduce_pow(i*j)]);
 """
             else:
-                c_N2_inner_impl = \
+                if self.search_space_point.is_avx:
+                    c_N2_inner_impl = \
+f"""
+                avx_twiddle_arr[avx_load_cntr++] = inv ? g_stat_inv_twiddle_pows[barrett_reduce_pow(i*j)] : g_stat_twiddle_pows[barrett_reduce_pow(i*j)];
+"""
+                else:
+                    c_N2_inner_impl = \
 f"""
             y[i] = barrett_reduce(y[i] + x[j] * (inv ? g_stat_inv_twiddle_pows[barrett_reduce_pow(i*j)] : g_stat_twiddle_pows[barrett_reduce_pow(i*j)]));
 """
@@ -429,7 +457,9 @@ f"""
         {c_N2_avx_sum_init}
         {c_N2_inner_twiddle_init}
         for (int j = 0; j < {ntt_parameters.n}; j++) {self.sub_oc}
+            {c_N2_avx_reg_accum}
             {c_N2_inner_impl}
+            {c_N2_avx_cc}
         {self.sub_cc}
         {c_N2_outer_twiddle_incr}
     {self.sub_cc}
