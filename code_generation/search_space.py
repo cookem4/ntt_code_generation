@@ -72,7 +72,7 @@ class Search_Space:
         output = self.run_bash_cmd(bash_command) 
 
         # Skip callgrind if openMP
-        if (self.is_omp):
+        if (not self.is_omp):
             bash_command = "valgrind --tool=callgrind " + PROG_NAME 
             output = self.run_bash_cmd(bash_command) 
             # Parse the massif output 
@@ -104,27 +104,78 @@ class Search_Space:
             running_sum = running_sum + int(matches[0])
         self.runtime = (running_sum / NUM_TIME_RERUN)
 
-    def __init__(self, type_str, is_lut, fixed_radix, max_mixed_radix, is_omp, is_avx, separate_inv_impl): 
+    def __init__(self, type_str, is_lut, fixed_radix, max_mixed_radix, is_omp, is_avx, is_recursive, recursive_base_case, separate_inv_impl): 
         self.type_str = type_str 
         self.is_lut = is_lut 
         self.fixed_radix = fixed_radix 
-        self.mixed_radix = 1 if fixed_radix == 0 else 0
+        self.mixed_radix = True if not fixed_radix else False
         self.max_mixed_radix = max_mixed_radix 
         self.is_avx = is_avx 
         self.is_omp = is_omp 
+        self.is_recursive = is_recursive 
+        self.recursive_base_case = recursive_base_case 
         # View code-size/performance tradeoff with separate
         # Forward and inverse implementations. To keep a common
         # Interface regardless use function interfaces
         self.separate_inv_impl = separate_inv_impl 
-        self.variant_name = str(self.type_str) + "_LUT" + str(int(self.is_lut)) + "_F" + str(int(self.fixed_radix)) + "_MR" + str(self.max_mixed_radix) + "_P" + str(int(self.is_omp)) + "_AVX" + str(int(self.is_avx)) + "_DI" + str(int(self.separate_inv_impl))
+        self.variant_name = str(self.type_str) + \
+                            "_LUT" + str(int(self.is_lut)) + \
+                            "_F" + str(int(self.fixed_radix)) + \
+                            "_MR" + str(self.max_mixed_radix) + \
+                            "_P" + str(int(self.is_omp)) + \
+                            "_AVX" + str(int(self.is_avx)) + \
+                            "_R" + str(int(self.is_recursive)) + \
+                            "_RB" + str(int(self.recursive_base_case)) + \
+                            "_DI" + str(int(self.separate_inv_impl))
 
 def build_search_space():
     # TODO might want to move these vectors into a file instead of looping over them
     # manually
     mixed_radix_range = [3, 5, 7, 11, 13]
+    recursive_base_case_range = [8, 16, 32, 64, 128, 256]
     search_space_objs = [] 
-    # TODO iterate over recursive base-case size (powers of 2 only)
     # Cross product of search space creates a set of NTT objects with certain attributes
+    '''
+    NTT_TYPE = "TYPE_FAST"
+    for is_lut in [False, True]:
+        for recursive_base_case in recursive_base_case_range:
+            # TODO cross this with AVX and OMP
+            if not is_lut:
+                for is_omp in [False, True]:
+                    for is_avx in [False, True]:
+                        new_data_obj = Search_Space(type_str=NTT_TYPE, \
+                                                    is_lut=is_lut, \
+                                                    fixed_radix=True, \
+                                                    max_mixed_radix=2, \
+                                                    is_omp=is_omp, \
+                                                    is_avx=is_avx, \
+                                                    is_recursive=True, \
+                                                    recursive_base_case=recursive_base_case, \
+                                                    separate_inv_impl=True) 
+                        search_space_objs.append(new_data_obj) 
+            else:
+                new_data_obj = Search_Space(type_str=NTT_TYPE, \
+                                            is_lut=is_lut, \
+                                            fixed_radix=True, \
+                                            max_mixed_radix=2, \
+                                            is_omp=False, \
+                                            is_avx=False, \
+                                            is_recursive=True, \
+                                            recursive_base_case=recursive_base_case, \
+                                            separate_inv_impl=True) 
+                search_space_objs.append(new_data_obj) 
+    '''
+    new_data_obj = Search_Space(type_str="TYPE_FAST", \
+                                is_lut=True, \
+                                fixed_radix=True, \
+                                max_mixed_radix=2, \
+                                is_omp=True, \
+                                is_avx=True, \
+                                is_recursive=True, \
+                                recursive_base_case=16, \
+                                separate_inv_impl=True) 
+    search_space_objs.append(new_data_obj)
+    '''
     for separate_inv_impl in [False, True]:
         NTT_TYPE = "TYPE_N2"
         for is_lut in [False, True]:
@@ -134,20 +185,83 @@ def build_search_space():
                     # TODO temp skip omp with AVX due to not-found race-condition
                     if not is_avx:
                         for is_omp in [False, True]:
-                            new_data_obj = Search_Space(NTT_TYPE, is_lut, False, 1, is_omp, is_avx, separate_inv_impl) 
+                            new_data_obj = Search_Space(type_str=NTT_TYPE, \
+                                                        is_lut=is_lut, \
+                                                        fixed_radix=False, \
+                                                        max_mixed_radix=1, \
+                                                        is_omp=is_omp, \
+                                                        is_avx=is_avx, \
+                                                        is_recursive=False, \
+                                                        recursive_base_case=0, \
+                                                        separate_inv_impl=separate_inv_impl) 
                             search_space_objs.append(new_data_obj) 
                 else:
-                    new_data_obj = Search_Space(NTT_TYPE, is_lut, False, 1, 0, is_avx, separate_inv_impl) 
+                    # OMP
+                    new_data_obj = Search_Space(type_str=NTT_TYPE, \
+                                                is_lut=is_lut, \
+                                                fixed_radix=False, \
+                                                max_mixed_radix=1, \
+                                                is_omp=True, \
+                                                is_avx=is_avx, \
+                                                is_recursive=False, \
+                                                recursive_base_case=0, \
+                                                separate_inv_impl=separate_inv_impl) 
                     search_space_objs.append(new_data_obj) 
         NTT_TYPE = "TYPE_FAST"
-        for is_lut in [False, True]:
-            for is_fixed_radix in [False, True]:
-                if (is_fixed_radix):
-                    new_data_obj = Search_Space(NTT_TYPE, is_lut, True, 2, 0, False, separate_inv_impl) 
-                    search_space_objs.append(new_data_obj) 
+        for is_recursive in [False, True]:
+            for is_lut in [False, True]:
+                if is_recursive:
+                    for recursive_base_case in recursive_base_case_range:
+                        # TODO cross this with AVX and OMP
+                        if not is_lut:
+                            for is_omp in [False, True]:
+                                for is_avx in [False, True]:
+                                    new_data_obj = Search_Space(type_str=NTT_TYPE, \
+                                                                is_lut=is_lut, \
+                                                                fixed_radix=True, \
+                                                                max_mixed_radix=2, \
+                                                                is_omp=is_omp, \
+                                                                is_avx=is_avx, \
+                                                                is_recursive=True, \
+                                                                recursive_base_case=recursive_base_case, \
+                                                                separate_inv_impl=separate_inv_impl) 
+                                    search_space_objs.append(new_data_obj) 
+                        else:
+                            new_data_obj = Search_Space(type_str=NTT_TYPE, \
+                                                        is_lut=is_lut, \
+                                                        fixed_radix=True, \
+                                                        max_mixed_radix=2, \
+                                                        is_omp=False, \
+                                                        is_avx=False, \
+                                                        is_recursive=True, \
+                                                        recursive_base_case=recursive_base_case, \
+                                                        separate_inv_impl=separate_inv_impl) 
+                            search_space_objs.append(new_data_obj) 
                 else:
-                    for max_mixed_radix in mixed_radix_range:
-                        new_data_obj = Search_Space(NTT_TYPE, is_lut, False, max_mixed_radix, 0, False, separate_inv_impl) 
-                        search_space_objs.append(new_data_obj) 
+                    for is_fixed_radix in [False, True]:
+                        if (is_fixed_radix):
+                            new_data_obj = Search_Space(type_str=NTT_TYPE, \
+                                                        is_lut=is_lut, \
+                                                        fixed_radix=True, \
+                                                        max_mixed_radix=2, \
+                                                        is_omp=False, \
+                                                        is_avx=False, \
+                                                        is_recursive=False, \
+                                                        recursive_base_case=0, \
+                                                        separate_inv_impl=separate_inv_impl) 
+                            search_space_objs.append(new_data_obj) 
+                        else:
+                            for max_mixed_radix in mixed_radix_range:
+                                new_data_obj = Search_Space(type_str=NTT_TYPE, \
+                                                            is_lut=is_lut, \
+                                                            fixed_radix=False, \
+                                                            max_mixed_radix=max_mixed_radix, \
+                                                            is_omp=False, \
+                                                            is_avx=False, \
+                                                            is_recursive=False, \
+                                                            recursive_base_case=0, \
+                                                            separate_inv_impl=separate_inv_impl) 
+                                search_space_objs.append(new_data_obj) 
+    '''
 
     return search_space_objs
