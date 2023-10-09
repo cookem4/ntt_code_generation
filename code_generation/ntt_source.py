@@ -41,11 +41,16 @@ class Ntt_Source:
 // Constants
 #define FAIL_PRINT_INFO 1
 """
+            # For recursive implementations we need to pass the size
+	    self.recursive_str = ""
+	    if (ntt_parameters.is_recursive):
+                self.recursive_str += "int n, int n0,"
+
             file.write(temp_str)
             # Inv flag only matters when we share an implementation between forward
             # and inverse transforms
-            file.write("void ntt_impl(int *x, int *y, int inv);\n")
-            file.write("void ntt_impl_inv(int *x, int *y, int inv);\n")
+            file.write(f"void ntt_impl(int *x, int *y, {self.recursive_str} int inv);\n")
+            file.write(f"void ntt_impl_inv(int *x, int *y, {self.recursive_str} int inv);\n")
             file.write(f"#endif {self.sub_co} NTT_H \n")
 
         # Write test file
@@ -311,17 +316,18 @@ void ntt_impl_inv(int *x, int *y, int inv) {self.sub_oc}
         # Build a big ol string
         ntt_impl_string = ""
 
+        c_ntt_impl_func_proto =  ""
         if (forward_impl):
             c_ntt_impl_func_proto = \
 f"""
-void ntt_impl(int *x, int *y, int inv) {self.sub_oc}
+ntt_impl(int *x, int *y, {recursive_str} int inv)
 """
         else:
             c_ntt_impl_func_proto = \
 f"""
-void ntt_impl_inv(int *x, int *y, int inv) {self.sub_oc}
+ntt_impl_inv(int *x, int *y, {recursive_str} int inv)
 """
-        ntt_impl_string += c_ntt_impl_func_proto
+        ntt_impl_string += "void " + c_ntt_impl_func_proto + " {\n"
 
         ############################################################
         # String substitutions into general loop structure for N2
@@ -594,7 +600,112 @@ f"""
 """
 
         ############################################################
-        # String substitutions into general loop structure for N2
+        # String substitutions into general loop structure for 
+        ############################################################
+
+	# Doesn't make sense to do mixed-radix recursive, since by definition
+	# Recursive is more memory intensive and thus
+
+        c_r2_rec_func_call_0 = ""
+        c_r2_rec_func_call_1 = ""
+        if (forward_impl):
+            c_r2_rec_func_call_0 = \
+f"""
+ntt_impl(x_sub[0], y_sub[0], n>>1, n0, inv)
+"""
+            c_r2_rec_func_call_1 = \
+f"""
+ntt_impl(x_sub[1], y_sub[1], n>>1, n0, inv)
+"""
+        else:
+            c_r2_rec_func_call_0 = \
+f"""
+ntt_impl_inv(x_sub[0], y_sub[0], n>>1, n0, inv)
+"""
+            c_r2_rec_func_call_1 = \
+f"""
+ntt_impl_inv(x_sub[1], y_sub[1], n>>1, n0, inv)
+"""
+
+        c_r2_rec_butterfly_twiddle_1 = ""
+        c_r2_rec_butterfly_twiddle_1_init = ""
+        c_r2_rec_butterfly_twiddle_1_post_mult = ""
+
+        if not self.search_space_point.is_lut:
+
+            c_r2_rec_butterfly_twiddle_1_init = \
+f"""
+int twiddle = 1;
+int adjusted_gen = a_pow_b_mod_m({ntt_parameters.g}, n0/n, {ntt_parameters.mod});
+"""
+            c_r2_rec_butterfly_twiddle_1 = \
+f"""
+twiddle
+"""
+            c_r2_rec_butterfly_twiddle_1_post_mult = \
+f"""
+twiddle = barrett_reduce(twiddle * adjusted_gen);
+"""
+
+        else:
+            if self.search_space_point.separate_inv_impl:
+                if forward_impl:
+                    c_r2_rec_butterfly_twiddle_1 = \
+f"""
+g_stat_twiddle_pows[barrett_reduce_pow((n0/n)*i)]
+"""
+                else:
+                    c_r2_rec_butterfly_twiddle_1 = \
+f"""
+g_stat_inv_twiddle_pows[barrett_reduce_pow((n0/n)*i)]
+"""
+            else:
+                    c_r2_rec_butterfly_twiddle_1 = \
+f"""
+(inv ? g_stat_twiddle_pows[barrett_reduce_pow((n0/n)*i)] : g_stat_inv_twiddle_pows[barrett_reduce_pow((n0/n)*i)])
+"""
+
+	c_fast_fixed_r2_recursive = \
+f"""
+    if (n <= {ntt_parameters.recursive_base_case}) {self.sub_oc}
+        {self.sub_co} Assume y allocated by caller
+        {c_N2_no_lut_twiddle_def}
+        {c_N2_avx_init}
+        {c_N2_omp_pragma}
+        for (int i = 0; i < n; i++) {self.sub_oc}
+            {c_N2_avx_parallel_init}
+            {c_N2_inner_twiddle_init}
+            for (int j = 0; j < n; j++) {self.sub_oc}
+                {c_N2_inner_impl}
+                {c_N2_avx_reg_accum}
+            {self.sub_cc}
+        {self.sub_cc}
+    {self.sub_cc} else {self.sub_oc}
+        int * x_e = malloc(n>>1 * sizeof(int));
+        int * x_o = malloc(n>>1 * sizeof(int));
+        int * y_e = calloc(n>>1 , sizeof(int));
+        int * y_o = calloc(n>>1 , sizeof(int));
+        for (int j = 0; j < n>>1; j++) {self.sub_oc}
+            x_e[j] = x[j<<1 + 0];
+            x_o[j] = x[j<<1 + 1];
+        {self.sub_cc}
+        {self.sub_co} Recursive calls followed by twiddles
+	{self.c_ntt_impl_func_proto_0};
+	{self.c_ntt_impl_func_proto_1};
+        {c_r2_rec_butterfly_twiddle_1_init}
+        for (int i = 0; i < n>>1; i++) {self.sub_oc}
+            int sum_0 = y_e + y_0
+            int sum_1 = y_e + barrett_reduce({c_r2_rec_butterfly_twiddle_1}*y_o);
+            y[i]        = sum_0 >= {ntt_parameters.mod} ? sum_0 - {ntt_parameters.mod} : sum_0;
+            y[i + n>>1] = sum_1 >= {ntt_parameters.mod} ? sum_1 - {ntt_parameters.mod} : sum_1;
+            {c_r2_rec_butterfly_twiddle_1_post_mult}
+        {self.sub_cc}
+    {self.sub_cc}
+"""
+
+
+        ############################################################
+        # String substitutions into general loop structure for 
         ############################################################
 
         c_MR_pow_defs = ""

@@ -28,9 +28,9 @@ class Search_Space:
         PROG_NAME = "./ntt_test" 
         # bash_command_build = "make clean && make CFLAGS=\"-O0 -g" 
         bash_command_build = "make clean && make CFLAGS=\"-O3 " 
-        if (self.is_omp == 1):
+        if (self.is_omp):
             bash_command_build += " -fopenmp "
-        if (self.is_avx == 1):
+        if (self.is_avx):
             bash_command_build += " -mavx2 "
         bash_command = bash_command_build + "\"" 
         print(bash_command)
@@ -72,7 +72,7 @@ class Search_Space:
         output = self.run_bash_cmd(bash_command) 
 
         # Skip callgrind if openMP
-        if (self.is_omp == 0):
+        if (self.is_omp):
             bash_command = "valgrind --tool=callgrind " + PROG_NAME 
             output = self.run_bash_cmd(bash_command) 
             # Parse the massif output 
@@ -123,6 +123,7 @@ def build_search_space():
     # manually
     mixed_radix_range = [3, 5, 7, 11, 13]
     search_space_objs = [] 
+    # TODO iterate over recursive base-case size (powers of 2 only)
     # Cross product of search space creates a set of NTT objects with certain attributes
     for separate_inv_impl in [False, True]:
         NTT_TYPE = "TYPE_N2"
