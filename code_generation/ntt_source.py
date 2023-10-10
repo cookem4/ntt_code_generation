@@ -24,8 +24,6 @@ class Ntt_Source:
     sub_cco = "*/"
     sub_tab = "\t"
     sub_nl = "\\n"
-    # 8x32 bit integers in a 256 avx unit
-    avx_reg_width = 8;
 
     def generate_target(self):
         # Use search space point to create code
@@ -35,6 +33,7 @@ class Ntt_Source:
             file.write("#ifndef NTT_H\n#define NTT_H\n")
             # TODO stdlib not needed?
             file.write("#include <stdlib.h>\n")
+            file.write("#include <stdint.h>\n")
             if self.search_space_point.is_omp:
                 file.write("#include <omp.h>\n")
             if self.search_space_point.is_pthread:
@@ -51,13 +50,13 @@ class Ntt_Source:
             self.recursive_str = ""
             self.recursive_call_str = ""
             if (self.search_space_point.is_recursive):
-                self.recursive_str += "int n, int n0,"
+                self.recursive_str += "{self.ntt_parameters.n_type} n, {self.ntt_parameters.n_type} n0,"
                 self.recursive_call_str = f"{self.ntt_parameters.n}, {self.ntt_parameters.n},"
             file.write(temp_str)
             # Inv flag only matters when we share an implementation between forward
             # and inverse transforms
-            file.write(f"void ntt_impl(int *x, int *y, {self.recursive_str} int inv);\n")
-            file.write(f"void ntt_impl_inv(int *x, int *y, {self.recursive_str} int inv);\n")
+            file.write(f"void ntt_impl({self.ntt_parameters.mod_type} *x, {self.ntt_parameters.mod_type} *y, {self.recursive_str} uint8_t inv);\n")
+            file.write(f"void ntt_impl_inv({self.ntt_parameters.mod_type} *x, {self.ntt_parameters.mod_type} *y, {self.recursive_str} uint8_t inv);\n")
             file.write(f"#endif {self.sub_co} NTT_H \n")
 
         # Write test file
@@ -74,8 +73,8 @@ f"""
             file.write(temp_str)
             temp_str = \
 f"""
-int modinv(int a, int m) {self.sub_oc}
-    int q, t, r, newt, newr, tempt, tempr;
+{self.ntt_parameters.mod_type} modinv({self.ntt_parameters.mod_type} a, {self.ntt_parameters.mod_type} m) {self.sub_oc}
+    {self.ntt_parameters.mod_type} q, t, r, newt, newr, tempt, tempr;
     t = 0;
     newt = 1;
     r = m;
@@ -98,14 +97,14 @@ int modinv(int a, int m) {self.sub_oc}
             file.write(temp_str)
             temp_str = \
 f"""
-int ntt_check(int *x, int *y, int *x_inv, int *y_inv) {self.sub_oc}
+uint8_t ntt_check({self.ntt_parameters.mod_type} *x, {self.ntt_parameters.mod_type} *y, {self.ntt_parameters.mod_type} *x_inv, {self.ntt_parameters.mod_type} *y_inv) {self.sub_oc}
     ntt_impl(x, y, {self.recursive_call_str} 0);
     ntt_impl_inv(y, y_inv, {self.recursive_call_str} 1);
     x_inv = y;
-    int *orig_arr = x;
-    int *final_arr = y_inv;
-    int inv_n = modinv({self.ntt_parameters.n}, {self.ntt_parameters.mod});
-    for (int i = 0; i < {self.ntt_parameters.n}; i++) {self.sub_oc}
+    {self.ntt_parameters.mod_type} *orig_arr = x;
+    {self.ntt_parameters.mod_type} *final_arr = y_inv;
+    {self.ntt_parameters.mod_type} inv_n = modinv({self.ntt_parameters.n}, {self.ntt_parameters.mod});
+    for ({self.ntt_parameters.n_type} i = 0; i < {self.ntt_parameters.n}; i++) {self.sub_oc}
         final_arr[i] = (final_arr[i] * inv_n) % {self.ntt_parameters.mod};
         if (final_arr[i] != orig_arr[i]) {self.sub_oc}
             {self.sub_co} TODO Temp skip FAST comparison
@@ -137,11 +136,11 @@ f"""
 
             temp_str = \
 f"""
-    int *x = malloc({self.ntt_parameters.n} * sizeof(int));
-    int *y = malloc({self.ntt_parameters.n} * sizeof(int));
-    int *x_inv = malloc({self.ntt_parameters.n} * sizeof(int));
-    int *y_inv = malloc({self.ntt_parameters.n} * sizeof(int));
-    for (int i = 0; i < {self.ntt_parameters.n}; i++) {self.sub_oc}
+    {self.ntt_parameters.mod_type} *x = malloc({self.ntt_parameters.n} * sizeof(int));
+    {self.ntt_parameters.mod_type} *y = malloc({self.ntt_parameters.n} * sizeof(int));
+    {self.ntt_parameters.mod_type} *x_inv = malloc({self.ntt_parameters.n} * sizeof(int));
+    {self.ntt_parameters.mod_type} *y_inv = malloc({self.ntt_parameters.n} * sizeof(int));
+    for ({self.ntt_parameters.n_type} i = 0; i < {self.ntt_parameters.n}; i++) {self.sub_oc}
         {self.sub_co} x[i] = rand() % {self.ntt_parameters.mod};
         x[i] = i;
     {self.sub_cc}
@@ -150,7 +149,7 @@ f"""
     double elapsed_time;
     gettimeofday(&start, NULL);
 {self.sub_pc}endif
-    int check_res = ntt_check(x, y, x_inv, y_inv);
+    uint8_t check_res = ntt_check(x, y, x_inv, y_inv);
 {self.sub_pc}if DO_TIME
     gettimeofday(&end, NULL);
     elapsed_time = (end.tv_sec - start.tv_sec)*1e6 + (end.tv_usec - start.tv_usec);
@@ -159,15 +158,15 @@ f"""
     if (!check_res) {self.sub_oc}
         {self.sub_pc}if FAIL_PRINT_INFO
         printf("FWD IN:{self.sub_nl}");
-        for (int i = 0; i < {self.ntt_parameters.n}; i++) {self.sub_oc}
+        for ({self.ntt_parameters.n_type} i = 0; i < {self.ntt_parameters.n}; i++) {self.sub_oc}
             printf("%d, ", x[i]);
         {self.sub_cc}
         printf("{self.sub_nl}FWD OUT:{self.sub_nl}");
-        for (int i = 0; i < {self.ntt_parameters.n}; i++) {self.sub_oc}
+        for ({self.ntt_parameters.n_type} i = 0; i < {self.ntt_parameters.n}; i++) {self.sub_oc}
             printf("%d, ", y[i]);
         {self.sub_cc}
         printf("{self.sub_nl}INV(FWD):{self.sub_nl}");
-        for (int i = 0; i < {self.ntt_parameters.n}; i++) {self.sub_oc}
+        for ({self.ntt_parameters.n_type} i = 0; i < {self.ntt_parameters.n}; i++) {self.sub_oc}
             printf("%d, ", y_inv[i]);
         {self.sub_cc}
         printf("{self.sub_nl} FAIL{self.sub_nl}");
@@ -186,12 +185,13 @@ f"""
         # Always defined
         c_barrett_reduction = \
 f"""
-int barrett_reduce(int a) {self.sub_oc}
-  long int q, t;
-  q = ((long int) a*{self.ntt_parameters.barrett_r}) >> {self.ntt_parameters.barrett_k};
-  t = (long int) a - (q * {self.ntt_parameters.mod});
-  t = t >= (long int) {self.ntt_parameters.mod} ? t - (long int) {self.ntt_parameters.mod} : t;
-  return (int) t;
+{self.ntt_parameters.mod_type} barrett_reduce({self.ntt_parameters.mod_type} a) {self.sub_oc}
+  {self.ntt_parameters.barrett_q_type} q;
+  {self.ntt_parameters.mod_type} t;
+  q = (a*(({self.ntt_parameters.barrett_q_type}){self.ntt_parameters.barrett_r})) >> {self.ntt_parameters.barrett_k};
+  t = a - ({self.ntt_parameters.mod_type}) (q * {self.ntt_parameters.mod});
+  t = t >= {self.ntt_parameters.mod} ? t - {self.ntt_parameters.mod} : t;
+  return t;
 {self.sub_cc}
 """
 
@@ -200,22 +200,22 @@ int barrett_reduce(int a) {self.sub_oc}
 # TODO what to do about type extension here if we go from int to long int?? With a big modulus
             c_barrett_reduction_avx = \
 f"""
-__m256i barrett_reduce_avx(__m256i a) {self.sub_oc}
-  __m256i barrett_r_avx   = _mm256_set1_epi32({self.ntt_parameters.barrett_r});
-  __m256i mod_avx         = _mm256_set1_epi32({self.ntt_parameters.mod});
-  __m256i q, t;
+__m{self.avx_width_str}i barrett_reduce_avx(__m{self.avx_width_str}i a) {self.sub_oc}
+  __m{self.avx_width_str}i barrett_r_avx   = _mm{self.avx_width_str}_set1_epi{self.ntt_parameters.mod_trunc}({self.ntt_parameters.barrett_r});
+  __m{self.avx_width_str}i mod_avx         = _mm{self.avx_width_str}_set1_epi{self.ntt_parameters.mod_trunc}({self.ntt_parameters.mod});
+  __m{self.avx_width_str}i q, t;
 
   {self.sub_co} Calculate q = (a * barrett_r) >> barrett_k;
-  q = _mm256_mullo_epi32(a, barrett_r_avx);
-  q = _mm256_srli_epi32(q, {self.ntt_parameters.barrett_k});
+  q = _mm{self.avx_width_str}_mullo_epi{self.ntt_parameters.mod_trunc}(a, barrett_r_avx);
+  q = _mm{self.avx_width_str}_srli_epi{self.ntt_parameters.mod_trunc}(q, {self.ntt_parameters.barrett_k});
 
   {self.sub_co} Calculate t = a - (q * mod);
-  t = _mm256_mullo_epi32(q, mod_avx);
-  t = _mm256_sub_epi32(a, t);
+  t = _mm{self.avx_width_str}_mullo_epi{self.ntt_parameters.mod_trunc}(q, mod_avx);
+  t = _mm{self.avx_width_str}_sub_epi{self.ntt_parameters.mod_trunc}(a, t);
 
   {self.sub_co} Check if t is greater than or equal to mod
-  __m256i cmp = _mm256_cmpgt_epi32(t, mod_avx);
-  t = _mm256_sub_epi32(t, _mm256_and_si256(cmp, mod_avx));
+  __m{self.avx_width_str}i cmp = _mm{self.avx_width_str}_cmpgt_epi{self.ntt_parameters.mod_trunc}(t, mod_avx);
+  t = _mm{self.avx_width_str}_sub_epi{self.ntt_parameters.mod_trunc}(t, _mm{self.avx_width_str}_and_si{self.avx_width_str}(cmp, mod_avx));
   return t;
 {self.sub_cc}
 """
@@ -223,19 +223,20 @@ __m256i barrett_reduce_avx(__m256i a) {self.sub_oc}
         # Reduces the LUT mapping i*j instead of doing the mod operation
         c_power_barrett_reduction = \
 f"""
-int barrett_reduce_pow(int a) {self.sub_oc}
-  long int q, t;
-  q = ((long int) a*{self.ntt_parameters.barrett_r_pow}) >> {self.ntt_parameters.barrett_k_pow};
-  t = (long int) a - (q * {self.ntt_parameters.n});
-  t = t >= (long int) {self.ntt_parameters.n} ? t - (long int) {self.ntt_parameters.n} : t;
-  return (int) t;
+{self.ntt_parameters.n_type} barrett_reduce_pow({self.ntt_parameters.n_type} a) {self.sub_oc}
+  {self.ntt_parameters.barrett_q_pow_type} q;
+  {self.ntt_parameters.n_type} t;
+  q = (a*(({self.ntt_parameters.barrett_q_pow_type}) {self.ntt_parameters.barrett_r_pow})) >> {self.ntt_parameters.barrett_k_pow};
+  t = a - ({self.ntt_parameters.n_type}) (q * {self.ntt_parameters.n});
+  t = t >= {self.ntt_parameters.n} ? t - {self.ntt_parameters.n} : t;
+  return t;
 {self.sub_cc}
 """
         c_a_pow_b_mod_m = \
 f"""
-int a_pow_b_mod_m(int a, int b) {self.sub_oc}
-    int abm = 1;
-    for (int i = 0; i < b; i++) {self.sub_oc}
+{self.ntt_parameters.mod_type} a_pow_b_mod_m({self.ntt_parameters.mod_type} a, {self.ntt_parameters.mod_type} b) {self.sub_oc}
+    {self.ntt_parameters.mod_type} abm = 1;
+    for ({self.ntt_parameters.mod_type} i = 0; i < b; i++) {self.sub_oc}
         abm = barrett_reduce(abm * a);
     {self.sub_cc}
     return abm;
@@ -245,7 +246,7 @@ int a_pow_b_mod_m(int a, int b) {self.sub_oc}
         if self.search_space_point.type_str == "TYPE_FAST" and self.search_space_point.mixed_radix:
             c_prime_fact_lut = \
 f"""
-static const int g_stat_prime_factors[{len(self.ntt_parameters.prime_factorization)}] = {self.sub_oc}
+static const {self.ntt_parameters.mod_type} g_stat_prime_factors[{len(self.ntt_parameters.prime_factorization)}] = {self.sub_oc}
 """
             for i in range(len(self.ntt_parameters.prime_factorization)-1):
                 c_prime_fact_lut += f"\t{self.ntt_parameters.prime_factorization[i]}, \n"
@@ -262,7 +263,7 @@ f"""
             # Defined and populated if LUT approach used
             c_static_pow_lut = \
 f"""
-static const int g_stat_twiddle_pows[{self.ntt_parameters.n}] = {self.sub_oc}
+static const {self.ntt_parameters.mod_type} g_stat_twiddle_pows[{self.ntt_parameters.n}] = {self.sub_oc}
 """
             # Power lut entries
             running_pow = 1
@@ -276,7 +277,7 @@ f"""
 """
             c_static_inv_pow_lut = \
 f"""
-static const int g_stat_inv_twiddle_pows[{self.ntt_parameters.n}] = {self.sub_oc}
+static const {self.ntt_parameters.mod_type} g_stat_inv_twiddle_pows[{self.ntt_parameters.n}] = {self.sub_oc}
 """
             # Power lut entries
             running_pow = 1
@@ -308,8 +309,8 @@ typedef struct {self.sub_oc}
     int thread_id;
     int start_row;
     int end_row;
-    int *x;
-    int *y;
+    {self.ntt_parameters.mod_type} *x;
+    {self.ntt_parameters.mod_type} *y;
 {self.sub_cc} thread_data_t;
 """
         c_ntt_str += self.generate_ntt_func(self.ntt_parameters, True)
@@ -324,7 +325,7 @@ typedef struct {self.sub_oc}
             # If no separate inv impl then build a function wrapper for ntt_inv that goes to ntt_fwd
             c_ntt_str += \
 f"""
-void ntt_impl_inv(int *x, int *y, int inv) {self.sub_oc}
+void ntt_impl_inv({self.ntt_parameters.mod_type} *x, {self.ntt_parameters.mod_type} *y, uint8_t inv) {self.sub_oc}
     {self.sub_co} The illusion of choice
     ntt_impl(x, y, 1);
 {self.sub_cc}
@@ -345,10 +346,10 @@ void ntt_impl_inv(int *x, int *y, int inv) {self.sub_oc}
         c_ntt_impl_func_proto =  ""
         if (forward_impl):
             c_ntt_impl_func_proto = \
-f"""ntt_impl(int *x, int *y, {self.recursive_str} int inv)"""
+f"""ntt_impl({self.ntt_parameters.mod_type} *x, {self.ntt_parameters.mod_type} *y, {self.recursive_str} uint8_t inv)"""
         else:
             c_ntt_impl_func_proto = \
-f"""ntt_impl_inv(int *x, int *y, {self.recursive_str} int inv)"""
+f"""ntt_impl_inv({self.ntt_parameters.mod_type} *x, {self.ntt_parameters.mod_type} *y, {self.recursive_str} uint8_t inv)"""
         c_ntt_common_func_header = "void " + c_ntt_impl_func_proto + " {\n"
 
         ############################################################
@@ -370,42 +371,37 @@ f"""
             if self.search_space_point.is_omp:
                 c_N2_avx_parallel_init = \
 f"""
-        __m256i avx_result, avx_reduction, vec_a, vec_b;
-        int avx_twiddle_arr[{self.avx_reg_width}];
-        int hsum[8];
-        int temp_sum;
-        char avx_load_cntr = 0;
+        __m{self.avx_width_str}i avx_result, avx_reduction, vec_a, vec_b;
+        {self.ntt_parameters.mod_type} avx_twiddle_arr[{self.avx_reg_width}];
+        {self.ntt_parameters.mod_type} hsum[8];
+        {self.ntt_parameters.mod_type} temp_sum;
+        uint8_t avx_load_cntr = 0;
 """
             else:
                 c_N2_avx_init = \
 f"""
-    __m256i avx_result, avx_reduction, vec_a, vec_b;
-    int avx_twiddle_arr[{self.avx_reg_width}];
-    int hsum[8];
-    int temp_sum;
-    char avx_load_cntr = 0;
+    __m{self.avx_width_str}i avx_result, avx_reduction, vec_a, vec_b;
+    {self.ntt_parameters.mod_type} avx_twiddle_arr[{self.avx_reg_width}];
+    {self.ntt_parameters.mod_type} hsum[8];
+    {self.ntt_parameters.mod_type} temp_sum;
+    uint8_t avx_load_cntr = 0;
 """
             c_N2_avx_reg_accum = \
 f"""
             {self.sub_co} If on last of a block of 8 or if on last iteration of loop for non multiple of 8 dimension
             if (avx_load_cntr == {self.avx_reg_width}) {self.sub_oc}
                 // Load AVX
-                vec_a = _mm256_loadu_si256((__m256i*)avx_twiddle_arr);
-                vec_b = _mm256_loadu_si256((__m256i*)&x[j - 7]);
+                vec_a = _mm{self.avx_width_str}_loadu_si{self.avx_width_str}((__m{self.avx_width_str}i*)avx_twiddle_arr);
+                vec_b = _mm{self.avx_width_str}_loadu_si{self.avx_width_str}((__m{self.avx_width_str}i*)&x[j - 7]);
                 // Perform AVX operation
-                avx_result = _mm256_mullo_epi32(vec_a, vec_b);
+                avx_result = _mm{self.avx_width_str}_mullo_epi{self.ntt_parameters.mod_trunc}(vec_a, vec_b);
                 // Perform AVX reduction
                 avx_result = barrett_reduce_avx(avx_result);
-                _mm256_storeu_si256((__m256i*)hsum, avx_result);
+                _mm{self.avx_width_str}_storeu_si{self.avx_width_str}((__m{self.avx_width_str}i*)hsum, avx_result);
                 temp_sum = 0;
-                temp_sum += hsum[0];
-                temp_sum += hsum[1];
-                temp_sum += hsum[2];
-                temp_sum += hsum[3];
-                temp_sum += hsum[4];
-                temp_sum += hsum[5];
-                temp_sum += hsum[6];
-                temp_sum += hsum[7];
+                for (uint8_t i = 0; i < {self.ntt_parameters.avx_reg_width}; i++) {self.sub_oc}
+                    temp_sum += hsum[i];
+                {self.sub_cc}
                 y[i] = y[i] + temp_sum;
                 // Reduce vector component-wise sum
                 y[i] = barrett_reduce(y[i]);
@@ -429,9 +425,9 @@ f"""
 """
             c_N2_no_lut_twiddle_def = \
 f"""
-    int twiddle = 1;
-    int twiddle_fact = 1; {self.sub_co} Geometrically increasing factor in each loop iteration
-    int temp;
+    {ntt_parameters.mod_type} twiddle = 1;
+    {ntt_parameters.mod_type} twiddle_fact = 1; {self.sub_co} Geometrically increasing factor in each loop iteration
+    {ntt_parameters.mod_type} temp;
 """
             if self.search_space_point.is_avx:
                 c_N2_inner_impl = \
@@ -502,11 +498,11 @@ f"""
 
 void *{"thread_loop" if forward_impl else "thread_loop_inv"}(void *arg) {self.sub_oc}
     thread_data_t * thread_params = (thread_data_t *)arg;
-    int * x = thread_params->x;
-    int * y = thread_params->y;
-    for (int i = thread_params->start_row; i < thread_params->end_row; i++) {self.sub_oc}
+    {self.ntt_parameters.mod_type} * x = thread_params->x;
+    {self.ntt_parameters.mod_type} * y = thread_params->y;
+    for ({self.ntt_parameters.n_type} i = thread_params->start_row; i < thread_params->end_row; i++) {self.sub_oc}
         {c_N2_avx_parallel_init}
-        for (int j = 0; j < {ntt_parameters.n}; j++) {self.sub_oc}
+        for ({self.ntt_parameters.n_type} j = 0; j < {ntt_parameters.n}; j++) {self.sub_oc}
             {c_N2_inner_impl}
             {c_N2_avx_reg_accum}
         {self.sub_cc}
@@ -518,7 +514,7 @@ void *{"thread_loop" if forward_impl else "thread_loop_inv"}(void *arg) {self.su
 f"""
     pthread_t threads[NUM_THREADS];
     thread_data_t thread_data[NUM_THREADS];
-    for (int i = 0; i < NUM_THREADS; i++) {self.sub_oc}
+    for (uint8_t i = 0; i < NUM_THREADS; i++) {self.sub_oc}
         thread_data[i].thread_id = i;
         thread_data[i].start_row = i * {ntt_parameters.n}/NUM_THREADS;
         thread_data[i].end_row = (i == NUM_THREADS - 1) ? {ntt_parameters.n} : (i + 1) * ({ntt_parameters.n} / NUM_THREADS);
@@ -527,7 +523,7 @@ f"""
         pthread_create(&threads[i], NULL, {"thread_loop" if forward_impl else "thread_loop_inv""thread_loop" if forward_impl else "thread_loop_inv"}, &thread_data[i]);
     {self.sub_cc}
     {self.sub_co} Wait for threads to finish
-    for (int i = 0; i < NUM_THREADS; i++) {self.sub_oc}
+    for (uint8_t i = 0; i < NUM_THREADS; i++) {self.sub_oc}
         pthread_join(threads[i], NULL);
     {self.sub_cc}
 """
@@ -545,16 +541,16 @@ f"""
             c_N2 = \
 f"""
 {c_ntt_common_func_header}
-    for (int i = 0; i < {ntt_parameters.n}; i++) {self.sub_oc}
+    for ({ntt_parameters.n_type} i = 0; i < {ntt_parameters.n}; i++) {self.sub_oc}
         y[i] = 0;
     {self.sub_cc}
     {c_N2_no_lut_twiddle_def}
     {c_N2_avx_init}
     {c_N2_omp_pragma}
-    for (int i = 0; i < {ntt_parameters.n}; i++) {self.sub_oc}
+    for ({ntt_parameters.n_type} i = 0; i < {ntt_parameters.n}; i++) {self.sub_oc}
         {c_N2_avx_parallel_init}
         {c_N2_inner_twiddle_init}
-        for (int j = 0; j < {ntt_parameters.n}; j++) {self.sub_oc}
+        for ({ntt_parameters.n_type} j = 0; j < {ntt_parameters.n}; j++) {self.sub_oc}
             {c_N2_inner_impl}
             {c_N2_avx_reg_accum}
         {self.sub_cc}
@@ -584,9 +580,9 @@ f"""
             if self.search_space_point.separate_inv_impl:
                 c_R2_half_rot_init = \
 f"""
-    int half_rot = {nt.a_pow_b_mod_m(ntt_parameters.g, ntt_parameters.n>>1, ntt_parameters.mod)};
-    int stride_twiddle;
-    int running_twiddle_1;
+    {ntt_parameters.mod_type} half_rot = {nt.a_pow_b_mod_m(ntt_parameters.g, ntt_parameters.n>>1, ntt_parameters.mod)};
+    {ntt_parameters.mod_type} stride_twiddle;
+    {ntt_parameters.mod_type} running_twiddle_1;
 """
                 c_R2_stride_twiddle = \
 f"""
@@ -595,9 +591,9 @@ f"""
             else:
                 c_R2_half_rot_init = \
 f"""
-    int half_rot = inv ? {nt.a_pow_b_mod_m(ntt_parameters.g_inv, ntt_parameters.n>>1, ntt_parameters.mod)} : {nt.a_pow_b_mod_m(ntt_parameters.g, ntt_parameters.n>>1, ntt_parameters.mod)};
-    int stride_twiddle;
-    int running_twiddle_1;
+    {ntt_parameters.mod_type} half_rot = inv ? {nt.a_pow_b_mod_m(ntt_parameters.g_inv, ntt_parameters.n>>1, ntt_parameters.mod)} : {nt.a_pow_b_mod_m(ntt_parameters.g, ntt_parameters.n>>1, ntt_parameters.mod)};
+    {ntt_parameters.mod_type} stride_twiddle;
+    {ntt_parameters.mod_type} running_twiddle_1;
 """
                 c_R2_stride_twiddle = \
 f"""
@@ -609,7 +605,7 @@ f"""
                 if forward_impl:
                     c_R2_half_rot_init = \
 f"""
-    int half_rot = g_stat_twiddle_pows[{ntt_parameters.n}>>1];
+    {ntt_parameters.mod_type} half_rot = g_stat_twiddle_pows[{ntt_parameters.n}>>1];
 """
                     c_R2_twiddle1_twiddle2_assign = \
 f"""
@@ -620,7 +616,7 @@ f"""
                 else:
                     c_R2_half_rot_init = \
 f"""
-    int half_rot = g_stat_inv_twiddle_pows[{ntt_parameters.n}>>1];
+    {ntt_parameters.mod_type} half_rot = g_stat_inv_twiddle_pows[{ntt_parameters.n}>>1];
 """
                     c_R2_twiddle1_twiddle2_assign = \
 f"""
@@ -631,7 +627,7 @@ f"""
             else:
                 c_R2_half_rot_init = \
 f"""
-    int half_rot = inv ? g_stat_inv_twiddle_pows[{ntt_parameters.n}>>1] : g_stat_twiddle_pows[{ntt_parameters.n}>>1];
+    {ntt_parameters.mod_type} half_rot = inv ? g_stat_inv_twiddle_pows[{ntt_parameters.n}>>1] : g_stat_twiddle_pows[{ntt_parameters.n}>>1];
 """
                 c_R2_twiddle1_twiddle2_assign = \
 f"""
@@ -644,23 +640,23 @@ f"""
         c_fast_fixed_r2 = \
 f"""
 {c_ntt_common_func_header}
-    int t1, t2;
-    int twiddle1, twiddle2;
-    int cur_size;
-    int cur_idx;
+    {ntt_parameters.mod_type} t1, t2;
+    {ntt_parameters.mod_type} twiddle1, twiddle2;
+    {ntt_parameters.n_type} cur_size;
+    {ntt_parameters.n_type} cur_idx;
     {self.sub_co} Copy x to y then do inplace
-    for (int i = 0; i < {ntt_parameters.n}; i++) {self.sub_oc}
+    for ({ntt_parameters.n_type} i = 0; i < {ntt_parameters.n}; i++) {self.sub_oc}
         y[i] = x[i];
     {self.sub_cc}
     {c_R2_half_rot_init}
-    for (int stride = {ntt_parameters.n}>>1; stride >= 1; stride >>= 1) {self.sub_oc}
+    for ({ntt_parameters.n_type} stride = {ntt_parameters.n}>>1; stride >= 1; stride >>= 1) {self.sub_oc}
         cur_size = stride<<1;
         {c_R2_stride_twiddle}
         {c_R2_running_twiddle_1_init}
         {self.sub_co} For each of the "sub-transforms" in the CT butterfly
-        for (int sub_trans_idx = 0; sub_trans_idx < {ntt_parameters.n}/cur_size; sub_trans_idx++) {self.sub_oc}
+        for ({ntt_parameters.n_type} sub_trans_idx = 0; sub_trans_idx < {ntt_parameters.n}/cur_size; sub_trans_idx++) {self.sub_oc}
             {self.sub_co} We take steps within our sub transform
-            for (int step = 0; step < stride; step++) {self.sub_oc}
+            for ({ntt_parameters.n_type} step = 0; step < stride; step++) {self.sub_oc}
                 cur_idx = sub_trans_idx*cur_size + step;
                 {c_R2_twiddle1_twiddle2_assign}
                 y[cur_idx + stride] = barrett_reduce(y[cur_idx] + y[cur_idx + stride] * twiddle2);
@@ -698,8 +694,8 @@ f"""ntt_impl_inv(x_o, y_o, n>>1, n0, inv)"""
 
             c_r2_rec_butterfly_twiddle_1_init = \
 f"""
-        int twiddle = 1;
-        int adjusted_gen = a_pow_b_mod_m({ntt_parameters.g}, n0/n);
+        {ntt_parameters.mod_type} twiddle = 1;
+        {ntt_parameters.mod_type} adjusted_gen = a_pow_b_mod_m({ntt_parameters.g}, n0/n);
 """
             c_r2_rec_butterfly_twiddle_1 = \
 f"twiddle"
@@ -728,10 +724,10 @@ f"""
         {c_N2_no_lut_twiddle_def}
         {c_N2_avx_init}
         {c_N2_omp_pragma}
-        for (int i = 0; i < n; i++) {self.sub_oc}
+        for ({self.ntt_parameters.n_type} i = 0; i < n; i++) {self.sub_oc}
             {c_N2_avx_parallel_init}
             {c_N2_inner_twiddle_init}
-            for (int j = 0; j < n; j++) {self.sub_oc}
+            for ({self.ntt_parameters.n_type} j = 0; j < n; j++) {self.sub_oc}
                 {self.sub_co} TODO below should have n0/n generator ratio
                 {c_N2_inner_impl}
                 {c_N2_avx_reg_accum}
@@ -739,11 +735,11 @@ f"""
             {c_N2_outer_twiddle_incr}
         {self.sub_cc}
     {self.sub_cc} else {self.sub_oc}
-        int * x_e = malloc(n>>1 * sizeof(int));
-        int * x_o = malloc(n>>1 * sizeof(int));
-        int * y_e = calloc(n>>1 , sizeof(int));
-        int * y_o = calloc(n>>1 , sizeof(int));
-        for (int j = 0; j < n>>1; j++) {self.sub_oc}
+        {self.ntt_parameters.mod_type} * x_e = malloc(n>>1 * sizeof(int));
+        {self.ntt_parameters.mod_type} * x_o = malloc(n>>1 * sizeof(int));
+        {self.ntt_parameters.mod_type} * y_e = calloc(n>>1 , sizeof(int));
+        {self.ntt_parameters.mod_type} * y_o = calloc(n>>1 , sizeof(int));
+        for ({self.ntt_parameters.n_type} j = 0; j < n>>1; j++) {self.sub_oc}
             x_e[j] = x[j<<1 + 0];
             x_o[j] = x[j<<1 + 1];
         {self.sub_cc}
@@ -753,9 +749,9 @@ f"""
         {c_r2_rec_butterfly_twiddle_1_init}
         {self.sub_co} TODO should this be pragma'd?
         {c_N2_omp_pragma}
-        for (int i = 0; i < n>>1; i++) {self.sub_oc}
-            int sum_0 = y_e[i] + y_o[i];
-            int sum_1 = y_e[i] + barrett_reduce({c_r2_rec_butterfly_twiddle_1}*y_o[i]);
+        for ({self.ntt_parameters.n_type} i = 0; i < n>>1; i++) {self.sub_oc}
+            {self.ntt_parameters.mod_type} sum_0 = y_e[i] + y_o[i];
+            {self.ntt_parameters.mod_type} sum_1 = y_e[i] + barrett_reduce({c_r2_rec_butterfly_twiddle_1}*y_o[i]);
             y[i]        = sum_0 >= {ntt_parameters.mod} ? sum_0 - {ntt_parameters.mod} : sum_0;
             y[i + n>>1] = sum_1 >= {ntt_parameters.mod} ? sum_1 - {ntt_parameters.mod} : sum_1;
             {c_r2_rec_butterfly_twiddle_1_post_mult}
@@ -803,16 +799,16 @@ f"""
 """
             c_MR_pow_defs = \
 f"""
-    int base_j_1; {self.sub_co} With n_cur/DIM
-    int running_pow_j_2; {self.sub_co} With above ^ni
-    int running_pow_j_3; {self.sub_co} With above ^butterfly_j
-    int base_i_1; {self.sub_co} With dim/g_stat_prime_factors[fact_cnt]
-    int running_pow_i_2; {self.sub_co} With above ^butterfly_i
+    {ntt_parameters.mod_type} base_j_1; {self.sub_co} With n_cur/DIM
+    {ntt_parameters.mod_type} running_pow_j_2; {self.sub_co} With above ^ni
+    {ntt_parameters.mod_type} running_pow_j_3; {self.sub_co} With above ^butterfly_j
+    {ntt_parameters.mod_type} base_i_1; {self.sub_co} With dim/g_stat_prime_factors[fact_cnt]
+    {ntt_parameters.mod_type} running_pow_i_2; {self.sub_co} With above ^butterfly_i
 """
             c_MR_assn_y = \
 f"""
-                        int red1 = barrett_reduce(running_pow_j_3 * running_pow_i_2);
-                        int red2 = barrett_reduce(red2 * y_t[butterfly_j]);
+                        {ntt_parameters.mod_type} red1 = barrett_reduce(running_pow_j_3 * running_pow_i_2);
+                        {ntt_parameters.mod_type} red2 = barrett_reduce(red2 * y_t[butterfly_j]);
                         y[dst_idx] =  barrett_reduce(y[dst_idx] + red2);
                         running_pow_j_3 = barrett_reduce(running_pow_j_3 * running_pow_j_2);
 """
@@ -852,39 +848,39 @@ f"""
         c_fast_mr = \
 f"""
 {c_ntt_common_func_header}
-    int t;
-    int twiddle;
-    int n_cur = {ntt_parameters.n};
-    int orig_size = {ntt_parameters.n};
-    int fact_cnt = 0;
-    int n2 = n_cur/g_stat_prime_factors[fact_cnt];
-    int dst_idx;
+    {ntt_parameters.mod_type} t;
+    {ntt_parameters.mod_type} twiddle;
+    {ntt_parameters.n_type} n_cur = {ntt_parameters.n};
+    {ntt_parameters.n_type} orig_size = {ntt_parameters.n};
+    uint8_t fact_cnt = 0;
+    {ntt_parameters.n_type} n2 = n_cur/g_stat_prime_factors[fact_cnt];
+    {ntt_parameters.n_type} dst_idx;
     {self.sub_co} Copy x to y then do inplace
-    for (int i = 0; i < {ntt_parameters.n}; i++) {self.sub_oc}
+    for ({ntt_parameters.n_type} i = 0; i < {ntt_parameters.n}; i++) {self.sub_oc}
         y[i] = x[i];
     {self.sub_cc}
     {c_MR_pow_defs}
-    {self.sub_co} for (int n2 = n_cur/g_stat_prime_factors[fact_cnt]; n2 >= 1; n2 /= (g_stat_prime_factors[fact_cnt])) {self.sub_oc}
+    {self.sub_co} for ({ntt_parameters.n_type} n2 = n_cur/g_stat_prime_factors[fact_cnt]; n2 >= 1; n2 /= (g_stat_prime_factors[fact_cnt])) {self.sub_oc}
     {self.sub_co} Iterates over prime factors. Termination at bottom of loop
     {self.sub_while} (1) {self.sub_oc}
         {self.sub_co} For each of the "sub-transforms" in the CT butterfly
-        for (int n1 = 0; n1 < orig_size/n_cur; n1++) {self.sub_oc}
+        for ({ntt_parameters.n_type} n1 = 0; n1 < orig_size/n_cur; n1++) {self.sub_oc}
             {c_MR_common_pow_j_2_init}
             {c_MR_base_ij_set}
             {self.sub_co} We take steps within our self.sub transform
-            for (int ni = 0; ni < n2; ni++) {self.sub_oc}
+            for ({ntt_parameters.n_type} ni = 0; ni < n2; ni++) {self.sub_oc}
                 {self.sub_co} TODO any way around this dynamic memory allocation?
-                int *y_t = calloc(g_stat_prime_factors[fact_cnt], sizeof(int));
-                for (int butterfly_i = 0; butterfly_i < g_stat_prime_factors[fact_cnt]; butterfly_i++) {self.sub_oc}
+                {ntt_parameters.mod_type} *y_t = calloc(g_stat_prime_factors[fact_cnt], sizeof(int));
+                for ({ntt_parameters.n_type} butterfly_i = 0; butterfly_i < g_stat_prime_factors[fact_cnt]; butterfly_i++) {self.sub_oc}
                     dst_idx = n1*n_cur + ni + butterfly_i*n2;
                     y_t[butterfly_i] = y[dst_idx]; {self.sub_co} Temp save
                 {self.sub_cc}
                 {self.sub_co} We have N^2 terms to add where N is the prime factor
                 {self.sub_co} Since N sums into each N node of the self.sub transform
                 {c_MR_common_pow_i_2_init}
-                for (int butterfly_i = 0; butterfly_i < g_stat_prime_factors[fact_cnt]; butterfly_i++) {self.sub_oc}
+                for ({ntt_parameters.n_type} butterfly_i = 0; butterfly_i < g_stat_prime_factors[fact_cnt]; butterfly_i++) {self.sub_oc}
                     {c_MR_common_pow_j_3_init}
-                    for (int butterfly_j = 0; butterfly_j < g_stat_prime_factors[fact_cnt]; butterfly_j++) {self.sub_oc}
+                    for ({ntt_parameters.n_type} butterfly_j = 0; butterfly_j < g_stat_prime_factors[fact_cnt]; butterfly_j++) {self.sub_oc}
                         dst_idx = n1*n_cur + ni + butterfly_i*n2;
                         {c_MR_assn_y}
                     {self.sub_cc}
@@ -935,6 +931,20 @@ f"""
                 dimension += 1
                 self.ntt_parameters = nt.NTT_Params(dimension)
             print("Dimension expanded to ", dimension)
-        # For AVX, expand to multiple of 8
+        self.avx_width_str = ""
+        avx_temp = 256
+        if self.search_space_point.is_avx2:
+            avx_temp = 256
+            self.avx_width_str = str(avx_temp)
+        if self.search_space_point.is_avx512:
+            avx_temp = 512
+            self.avx_width_str = str(avx_temp)
+        if self.ntt_parameters.mod_type == "uint8_t":
+            self.avx_reg_width = avx_temp/8
+        elif self.ntt_parameters.mod_type == "uint16_t":
+            self.avx_reg_width = avx_temp/16
+        elif self.ntt_parameters.mod_type == "uint32_t":
+            self.avx_reg_width = avx_temp/32
+        # For AVX, expand to multiple of avx reg width
         if (self.search_space_point.type_str == "TYPE_N2" and self.search_space_point.is_avx):
             self.ntt_parameters = nt.NTT_Params(self.avx_reg_width * math.ceil(self.ntt_parameters.n / self.avx_reg_width))

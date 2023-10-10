@@ -3,6 +3,11 @@ import copy
 
 class NTT_Params:
     prime_factorization = []
+    # Word size constants
+    c_uint8 = "uint8_t"
+    c_uint16 = "uint16_t"
+    c_uint32 = "uint32_t"
+    c_uint64 = "uint64_t"
 
     # Setters
     def set_prime_factorization(self):
@@ -17,17 +22,58 @@ class NTT_Params:
                 fact += 1
         self.prime_factorization = sorted(self.prime_factorization)
 
+    # Truncate to type widths
+    def set_type_trunc(self, width):
+        if width <= 8:
+            return 8
+        elif width > 8 and width <= 16:
+            return 16
+        elif width > 16 and width <= 32:
+            return 32
+        elif width > 32:
+            return 64
+
+    def set_type_str(self, width):
+        if width <= 8:
+            return self.c_uint8
+        elif width > 8 and width <= 16:
+            return self.c_uint16
+        elif width > 16 and width <= 32:
+            return self.c_uint32
+        elif width > 32:
+            return self.c_uint64
+
     def __init__(self, dimension):
         self.n = dimension
         self.g, self.mod = get_ntt_params(self.n)
         self.g_inv = modinv(self.g, self.mod)
         self.prime_factorization = []
         self.set_prime_factorization()
-        self.barrett_k = 2*math.ceil(math.log2(self.mod));
-        self.barrett_r = ((1 << self.barrett_k) // self.mod);
+        self.barrett_k = 2*math.ceil(math.log2(self.mod))
+        self.barrett_r = ((1 << self.barrett_k) // self.mod)
         # For power reduction in the case of LUT
-        self.barrett_k_pow = 2*math.ceil(math.log2(self.n));
-        self.barrett_r_pow = ((1 << self.barrett_k_pow) // self.n);
+        self.barrett_k_pow = 2*math.ceil(math.log2(self.n))
+        self.barrett_r_pow = ((1 << self.barrett_k_pow) // self.n)
+        # For word size propagation
+        self.mod_width = math.ceil(math.log2(self.mod))
+        self.g_width = math.ceil(math.log2(self.mod))
+        self.g_inv_width = math.ceil(math.log2(self.mod))
+        self.barrett_k_width = math.ceil(math.log2(self.barrett_k))
+        self.barrett_r_width = math.ceil(math.log2(self.barrett_r))
+        self.n_width = math.ceil(math.log2(self.n))
+        self.barrett_k_pow_width = math.ceil(math.log2(self.barrett_k_pow))
+        self.barrett_r_pow_width = math.ceil(math.log2(self.barrett_r_pow))
+        # Assign int type strings to each parameter and the operations between parameters
+        self.mod_type = self.set_type_str(self.mod_width)
+        self.g_type = self.set_type_str(self.g_width)
+        self.g_inv_type = self.set_type_str(self.g_inv_width)
+        self.barrett_k_type = self.set_type_str(self.barrett_k_width)
+        self.barrett_r_type = self.set_type_str(self.barrett_r_width)
+        self.n_type = self.set_type_str(self.n_width)
+        self.barrett_q_type  = self.set_type_str(self.mod_width + self.barrett_r_width)
+        self.barrett_q_pow_type  = self.set_type_str(self.n_width + self.barrett_r_pow_width)
+        # Assign integer widths based on truncating widths to nearest word size
+        self.mod_trunc = self.set_type_trunc(self.mod_width)
 
 def is_prime(n):
     if (n & 1 == 0):

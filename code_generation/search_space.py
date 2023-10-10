@@ -2,6 +2,20 @@
 import subprocess
 import re
 
+def run_bash_cmd(bash_command): 
+    try: 
+        # Run the command and capture the output and error 
+        output = subprocess.check_output(bash_command, shell=True, universal_newlines=True, stderr=subprocess.STDOUT) 
+         
+        # Print the output 
+        # print(output) 
+        return output 
+    except subprocess.CalledProcessError as e: 
+        # If the command returns a non-zero exit code, it will raise a CalledProcessError 
+        print(f"Command failed with exit code {e.returncode}:") 
+        print(e.output) 
+
+
 class Search_Space: 
     # These parameters set by running the test suite
     code_size = 0
@@ -9,19 +23,6 @@ class Search_Space:
     total_mem = 0
     instr_ret = 0
     runtime = 0
-
-    def run_bash_cmd(self, bash_command): 
-        try: 
-            # Run the command and capture the output and error 
-            output = subprocess.check_output(bash_command, shell=True, universal_newlines=True, stderr=subprocess.STDOUT) 
-             
-            # Print the output 
-            # print(output) 
-            return output 
-        except subprocess.CalledProcessError as e: 
-            # If the command returns a non-zero exit code, it will raise a CalledProcessError 
-            print(f"Command failed with exit code {e.returncode}:") 
-            print(e.output) 
 
     # TODO worth collecting cache hit data?
     def run_test_suite(self):
@@ -37,9 +38,9 @@ class Search_Space:
         bash_command = bash_command_build + "\"" 
         print(bash_command)
         # Compile the program 
-        output = self.run_bash_cmd(bash_command) 
+        output = run_bash_cmd(bash_command) 
         # Run the program 
-        output = self.run_bash_cmd(PROG_NAME) 
+        output = run_bash_cmd(PROG_NAME) 
         print(output)
         if (output.find("PASS") != -1): 
             print("PASSED for NTT: " + self.variant_name) 
@@ -51,10 +52,10 @@ class Search_Space:
         # Can then run callgrind_annotate or ms_print for the given callgrind log 
 
         bash_command = "valgrind --tool=massif " + PROG_NAME 
-        output = self.run_bash_cmd(bash_command) 
+        output = run_bash_cmd(bash_command) 
         # Parse the massif output 
         bash_command = "ls massif* | xargs -I {} ms_print {}" 
-        output = self.run_bash_cmd(bash_command) 
+        output = run_bash_cmd(bash_command) 
         massif_pattern = r"(\d+)\s+([\d,]+)\s+([\d,]+)\s+([\d,]+)\s+([\d,]+)\s+([\d,]+)"
         # The last line looks like this:
         # --------------------------------------------------------------------------------
@@ -71,25 +72,25 @@ class Search_Space:
                 this_max = int(i[2].replace(",","")) 
         self.max_heap = this_max
         bash_command = "rm massif*" 
-        output = self.run_bash_cmd(bash_command) 
+        output = run_bash_cmd(bash_command) 
 
         # Skip callgrind if parallel
         if (not self.is_omp and not self.is_pthread):
             bash_command = "valgrind --tool=callgrind " + PROG_NAME 
-            output = self.run_bash_cmd(bash_command) 
+            output = run_bash_cmd(bash_command) 
             # Parse the massif output 
             bash_command = "ls callgrind* | xargs -I {} callgrind_annotate {}" 
-            output = self.run_bash_cmd(bash_command) 
+            output = run_bash_cmd(bash_command) 
             matches = re.findall(r"([\d,]+).*ntt_impl", output)
             self.instr_ret = int(matches[0].replace(",",""))
             bash_command = "rm callgrind*" 
-            output = self.run_bash_cmd(bash_command) 
+            output = run_bash_cmd(bash_command) 
         else:
             self.instr_ret = int(0)
 
         # Check code size in B 
         bash_command = "size ntt_target.o" 
-        output = self.run_bash_cmd(bash_command) 
+        output = run_bash_cmd(bash_command) 
         matches = re.findall(r"\d+\s+\d+\s+\d+\s+(\d+)", output)
         self.code_size = int(matches[0])
 
@@ -98,25 +99,27 @@ class Search_Space:
         running_sum = 0;
         bash_command_build = bash_command_build + " -DDO_TIME=1 \"" 
         # Compile with timing 
-        output = self.run_bash_cmd(bash_command_build) 
+        output = run_bash_cmd(bash_command_build) 
         for i in range(NUM_TIME_RERUN):
             # Execute 
-            output = self.run_bash_cmd(PROG_NAME) 
+            output = run_bash_cmd(PROG_NAME) 
             matches = re.findall(r"TIME\:\s+(\d+)\s+us", output)
             running_sum = running_sum + int(matches[0])
         self.runtime = (running_sum / NUM_TIME_RERUN)
 
-    def __init__(self, type_str="TYPE_N2", is_lut=True, fixed_radix=False, max_mixed_radix=False, is_omp=False, is_avx=False, is_recursive=False, recursive_base_case=0, is_pthread=False, max_threads=1, separate_inv_impl=True): 
+    def __init__(self, arch_dict=None, type_str="TYPE_N2", is_lut=True, fixed_radix=False, max_mixed_radix=False, is_omp=False, is_avx=False, is_recursive=False, recursive_base_case=0, is_pthread=False, max_threads=None, separate_inv_impl=True): 
         self.type_str = type_str 
         self.is_lut = is_lut 
         self.fixed_radix = fixed_radix 
         self.mixed_radix = True if not fixed_radix else False
         self.max_mixed_radix = max_mixed_radix 
         self.is_avx = is_avx 
+        self.is_avx512 = False if arch_dict is None else arch_dict["avx512"]
+        self.is_avx2 = False if arch_dict is None else arch_dict["avx2"]
         self.is_omp = is_omp 
         # Note: pthread and omp are mutually exclusive
         self.is_pthread = is_pthread 
-        self.max_threads = max_threads 
+        self.max_threads = max_threads if max_threads is not None else arch_dict["num_threads"]
         self.is_recursive = is_recursive 
         self.recursive_base_case = recursive_base_case 
         # View code-size/performance tradeoff with separate
@@ -135,7 +138,7 @@ class Search_Space:
                             "_NT" + str(int(self.max_threads)) + \
                             "_DI" + str(int(self.separate_inv_impl))
 
-def build_search_space():
+def build_search_space(arch_dict):
     # TODO might want to move these vectors into a file instead of looping over them
     # manually
     mixed_radix_range = [3, 5, 7, 11, 13]
@@ -172,6 +175,7 @@ def build_search_space():
                                             separate_inv_impl=True) 
                 search_space_objs.append(new_data_obj) 
     '''
+    '''
     new_data_obj = Search_Space(type_str="TYPE_N2", is_pthread=True, max_threads=1)
     search_space_objs.append(new_data_obj)
     new_data_obj = Search_Space(type_str="TYPE_N2", is_pthread=True, max_threads=2)
@@ -193,6 +197,9 @@ def build_search_space():
     new_data_obj = Search_Space(type_str="TYPE_N2", is_omp=True, max_threads=16)
     search_space_objs.append(new_data_obj)
     new_data_obj = Search_Space(type_str="TYPE_N2")
+    search_space_objs.append(new_data_obj)
+    '''
+    new_data_obj = Search_Space(type_str="TYPE_N2", arch_dict=arch_dict)
     search_space_objs.append(new_data_obj)
     '''
     for separate_inv_impl in [False, True]:

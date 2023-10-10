@@ -1,3 +1,4 @@
+import re
 import argparse
 import numpy as np
 import pdb
@@ -26,33 +27,56 @@ import search_space as ss
 # Leverage inline assembly
 # AVX instructions
 
-# Just a container for parameters
-class Code_Gen_Params: 
-    def __init__(self, dimension, max_heap_size, max_code_size, num_threads, max_stack_size, max_mem_footprint):
-        self.n = dimension
-        self.max_heap = max_heap_size
-        self.max_code = max_code_size
-        self.num_threads = num_threads
-        self.max_stack = max_stack_size
-        self.max_mem_footprint = max_mem_footprint
+def get_arch():
+    bash_command = "lscpu"
+    output = ss.run_bash_cmd(bash_command) 
+    matches = re.findall(r"Architecture:\s+(.*)", output)
+    arch_str = ""
+    if not matches:
+        print("ERROR: No arch available")
+    arch_str = matches[0]
+    is_x86 = arch_str == "x86_64"
+    is_arm64 = arch_str == "arm64"
+    is_arm32 = arch_str == "arm32"
+    matches = re.findall(r"avx2", output)
+    has_avx2 = True if matches else False
+    matches = re.findall(r"avx512", output)
+    has_avx512 = True if matches else False
+    matches = re.findall(r"Thread\(s\) per core:\s+(\d+)", output)
+    num_threads_per_core = 1
+    if matches:
+        num_threads_per_core = int(matches[0])
+    matches = re.findall(r"Core\(s\) per socket:\s+(\d+)", output)
+    cores_per_socket = 1
+    if matches:
+        cores_per_socket = int(matches[0])
+    matches = re.findall(r"Socket\(s\):\s+(\d+)", output)
+    sockets = 1
+    if matches:
+        sockets = int(matches[0])
+    num_threads = num_threads_per_core * cores_per_socket * sockets
+    ret_dict = {
+            "x86" : is_x86,
+            "arm64" : is_arm64,
+            "arm32" : is_arm32,
+            "avx2" : has_avx2,
+            "avx512" : has_avx512,
+            "num_threads" : num_threads
+    }
+    return ret_dict
 
 
 def main(args):
     # Access command-line arguments using args.argument_name
-    # max_heap_size = int(args.heap)
-    # max_code_size = int(args.code)
-    # num_threads = int(args.threads)
-    # max_stack_size = int(args.stack)
     dimension = int(args.dimension)
-    # max_mem_footprint = int(args.memory)
+    code_size = int(args.codesize)
+    heap_size = int(args.heap)
     
-    # code_gen = Code_Gen_Params(dimension, max_heap_size, max_code_size, num_threads, max_stack_size, max_mem_footprint)
-    code_gen = Code_Gen_Params(dimension, 0, 0, 0, 0, 0)
     ntt_parameters = nt.NTT_Params(dimension)
 
-    # The entire search space. Don't want to traverse all of it
-    # Use optimization algorithm to navigate to a "good" spot
-    search_space = ss.build_search_space()
+    arch_dict = get_arch()
+
+    search_space = ss.build_search_space(arch_dict)
 
     # Track metrics over time with changing search space point
     runtime_lst = []
@@ -61,11 +85,11 @@ def main(args):
     ir_lst = []
     metric_lst = []
 
-    # TODO do we need to account for heap differently when expanding
-    # dimensions?
-    # TODO the "zero" on the heap axis doesn't seem to be at zero. For ex with
-    # dim of 4 the heap is profiled to be 4200
+    arch_dict = get_arch()
 
+    # Quick profile based on memory requirements to reduce search space
+    # The idea is a quick conservative estimate to ensure that we stay within
+    # Desired memory footprint
     for search_space_point in search_space:
         code_gen_point = ns.Ntt_Source(search_space_point, ntt_parameters)
         # Call code gen
@@ -88,14 +112,9 @@ def main(args):
     
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Code generation in C for efficient arbitrary-radix NTT implementations")
-    
-    # Add arguments for max heap size, max code size, number of threads, and max stack size
-    # parser.add_argument("-p", "--heap")
-    # parser.add_argument("-c", "--code")
-    # parser.add_argument("-t", "--threads")
-    # parser.add_argument("-s", "--stack")
     parser.add_argument("-d", "--dimension")
-    # parser.add_argument("-m", "--memory")
+    parser.add_argument("-s", "--codesize")
+    parser.add_argument("-e", "--heap")
     
     args = parser.parse_args()
     main(args)
