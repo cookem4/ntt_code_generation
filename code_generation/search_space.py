@@ -73,8 +73,8 @@ class Search_Space:
         bash_command = "rm massif*" 
         output = self.run_bash_cmd(bash_command) 
 
-        # Skip callgrind if openMP
-        if (not self.is_omp):
+        # Skip callgrind if parallel
+        if (not self.is_omp and not self.is_pthread):
             bash_command = "valgrind --tool=callgrind " + PROG_NAME 
             output = self.run_bash_cmd(bash_command) 
             # Parse the massif output 
@@ -106,7 +106,7 @@ class Search_Space:
             running_sum = running_sum + int(matches[0])
         self.runtime = (running_sum / NUM_TIME_RERUN)
 
-    def __init__(self, type_str="TYPE_N2", is_lut=True, fixed_radix=False, max_mixed_radix=False, is_omp=False, is_avx=False, is_recursive=False, recursive_base_case=0, is_pthread=False, max_pthreads=1, separate_inv_impl=True): 
+    def __init__(self, type_str="TYPE_N2", is_lut=True, fixed_radix=False, max_mixed_radix=False, is_omp=False, is_avx=False, is_recursive=False, recursive_base_case=0, is_pthread=False, max_threads=1, separate_inv_impl=True): 
         self.type_str = type_str 
         self.is_lut = is_lut 
         self.fixed_radix = fixed_radix 
@@ -116,7 +116,7 @@ class Search_Space:
         self.is_omp = is_omp 
         # Note: pthread and omp are mutually exclusive
         self.is_pthread = is_pthread 
-        self.max_pthreads = max_pthreads 
+        self.max_threads = max_threads 
         self.is_recursive = is_recursive 
         self.recursive_base_case = recursive_base_case 
         # View code-size/performance tradeoff with separate
@@ -132,7 +132,7 @@ class Search_Space:
                             "_R" + str(int(self.is_recursive)) + \
                             "_RB" + str(int(self.recursive_base_case)) + \
                             "_PT" + str(int(self.is_pthread)) + \
-                            "_NT" + str(int(self.max_pthreads)) + \
+                            "_NT" + str(int(self.max_threads)) + \
                             "_DI" + str(int(self.separate_inv_impl))
 
 def build_search_space():
@@ -172,13 +172,25 @@ def build_search_space():
                                             separate_inv_impl=True) 
                 search_space_objs.append(new_data_obj) 
     '''
-    new_data_obj = Search_Space(type_str="TYPE_N2", is_pthread=True, max_pthreads=1)
+    new_data_obj = Search_Space(type_str="TYPE_N2", is_pthread=True, max_threads=1)
     search_space_objs.append(new_data_obj)
-    new_data_obj = Search_Space(type_str="TYPE_N2", is_pthread=True, max_pthreads=2)
+    new_data_obj = Search_Space(type_str="TYPE_N2", is_pthread=True, max_threads=2)
     search_space_objs.append(new_data_obj)
-    new_data_obj = Search_Space(type_str="TYPE_N2", is_pthread=True, max_pthreads=4)
+    new_data_obj = Search_Space(type_str="TYPE_N2", is_pthread=True, max_threads=4)
     search_space_objs.append(new_data_obj)
-    new_data_obj = Search_Space(type_str="TYPE_N2", is_pthread=True, max_pthreads=8)
+    new_data_obj = Search_Space(type_str="TYPE_N2", is_pthread=True, max_threads=8)
+    search_space_objs.append(new_data_obj)
+    new_data_obj = Search_Space(type_str="TYPE_N2", is_pthread=True, max_threads=16)
+    search_space_objs.append(new_data_obj)
+    new_data_obj = Search_Space(type_str="TYPE_N2", is_omp=True, max_threads=1)
+    search_space_objs.append(new_data_obj)
+    new_data_obj = Search_Space(type_str="TYPE_N2", is_omp=True, max_threads=2)
+    search_space_objs.append(new_data_obj)
+    new_data_obj = Search_Space(type_str="TYPE_N2", is_omp=True, max_threads=4)
+    search_space_objs.append(new_data_obj)
+    new_data_obj = Search_Space(type_str="TYPE_N2", is_omp=True, max_threads=8)
+    search_space_objs.append(new_data_obj)
+    new_data_obj = Search_Space(type_str="TYPE_N2", is_omp=True, max_threads=16)
     search_space_objs.append(new_data_obj)
     new_data_obj = Search_Space(type_str="TYPE_N2")
     search_space_objs.append(new_data_obj)

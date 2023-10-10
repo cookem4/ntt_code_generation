@@ -39,7 +39,7 @@ class Ntt_Source:
                 file.write("#include <omp.h>\n")
             if self.search_space_point.is_pthread:
                 file.write("#include <pthread.h>\n")
-                file.write(f"#define NUM_THREADS {self.search_space_point.max_pthreads}\n")
+                file.write(f"#define NUM_THREADS {self.search_space_point.max_threads}\n")
             if self.search_space_point.is_avx:
                 file.write("#include <immintrin.h>\n")
             temp_str = \
@@ -132,7 +132,7 @@ f"""
 
             # TODO how aggressive to go with threading here?
             if self.search_space_point.is_omp:
-                temp_str = f"\tomp_set_num_threads(omp_get_max_threads());\n"
+                temp_str = f"\tomp_set_num_threads({self.search_space_point.max_threads});\n"
                 file.write(temp_str)
 
             temp_str = \
