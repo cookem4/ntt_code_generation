@@ -37,6 +37,9 @@ class Ntt_Source:
             file.write("#include <stdlib.h>\n")
             if self.search_space_point.is_omp:
                 file.write("#include <omp.h>\n")
+            if self.search_space_point.is_pthread:
+                file.write("#include <pthread.h>\n")
+                file.write(f"#define NUM_THREADS {self.search_space_point.max_pthreads}\n")
             if self.search_space_point.is_avx:
                 file.write("#include <immintrin.h>\n")
             temp_str = \
@@ -49,7 +52,7 @@ class Ntt_Source:
             self.recursive_call_str = ""
             if (self.search_space_point.is_recursive):
                 self.recursive_str += "int n, int n0,"
-                self.recursive_call_str = f"{self.ntt_parameters.n}, {self.ntt_parameters.n}"
+                self.recursive_call_str = f"{self.ntt_parameters.n}, {self.ntt_parameters.n},"
             file.write(temp_str)
             # Inv flag only matters when we share an implementation between forward
             # and inverse transforms
@@ -61,6 +64,7 @@ class Ntt_Source:
         with open(self.c_test_name, "w") as file:
             file.write("#include \"ntt_target.h\"\n")
             file.write("#include <string.h>\n")
+
             temp_str = \
 f"""
 {self.sub_pc}include <stdlib.h>
@@ -95,8 +99,8 @@ int modinv(int a, int m) {self.sub_oc}
             temp_str = \
 f"""
 int ntt_check(int *x, int *y, int *x_inv, int *y_inv) {self.sub_oc}
-    ntt_impl(x, y, {self.recursive_call_str}, 0);
-    ntt_impl_inv(y, y_inv, {self.recursive_call_str}, 1);
+    ntt_impl(x, y, {self.recursive_call_str} 0);
+    ntt_impl_inv(y, y_inv, {self.recursive_call_str} 1);
     x_inv = y;
     int *orig_arr = x;
     int *final_arr = y_inv;
@@ -296,9 +300,21 @@ f"""
                              c_static_pow_lut + \
                              c_static_inv_pow_lut
 
+        c_ntt_str = ""
+        if self.search_space_point.is_pthread:
+            c_ntt_str += \
+f"""
+typedef struct {self.sub_oc}
+    int thread_id;
+    int start_row;
+    int end_row;
+    int *x;
+    int *y;
+{self.sub_cc} thread_data_t;
+"""
+        c_ntt_str += self.generate_ntt_func(self.ntt_parameters, True)
         # Always at least a forward implemenation
         # Build flags will insert ternary if needed
-        c_ntt_str = self.generate_ntt_func(self.ntt_parameters, True)
         if (self.search_space_point.separate_inv_impl):
             inv_ntt_parameters = self.ntt_parameters
             # Obtain inverted generator
@@ -333,7 +349,7 @@ f"""ntt_impl(int *x, int *y, {self.recursive_str} int inv)"""
         else:
             c_ntt_impl_func_proto = \
 f"""ntt_impl_inv(int *x, int *y, {self.recursive_str} int inv)"""
-        ntt_impl_string += "void " + c_ntt_impl_func_proto + " {\n"
+        c_ntt_common_func_header = "void " + c_ntt_impl_func_proto + " {\n"
 
         ############################################################
         # String substitutions into general loop structure for N2
@@ -344,6 +360,7 @@ f"""ntt_impl_inv(int *x, int *y, {self.recursive_str} int inv)"""
 f"""
 {self.sub_pc}pragma omp parallel for
 """
+
         # Initialize AVX sums fo rthe inner loop
         c_N2_avx_init = ""
         c_N2_inner_loop_structure = ""
@@ -476,11 +493,58 @@ f"""
 f"""
             y[i] = barrett_reduce(y[i] + x[j] * (inv ? g_stat_inv_twiddle_pows[barrett_reduce_pow(i*j)] : g_stat_twiddle_pows[barrett_reduce_pow(i*j)]));
 """
+
+        c_N2_pthread_impl = ""
+        c_N2_pthread_manage = ""
+        if self.search_space_point.is_pthread:
+            c_N2_pthread_impl = \
+f"""
+
+void *{"thread_loop" if forward_impl else "thread_loop_inv"}(void *arg) {self.sub_oc}
+    thread_data_t * thread_params = (thread_data_t *)arg;
+    int * x = thread_params->x;
+    int * y = thread_params->y;
+    for (int i = thread_params->start_row; i < thread_params->end_row; i++) {self.sub_oc}
+        {c_N2_avx_parallel_init}
+        for (int j = 0; j < {ntt_parameters.n}; j++) {self.sub_oc}
+            {c_N2_inner_impl}
+            {c_N2_avx_reg_accum}
+        {self.sub_cc}
+    {self.sub_cc}
+    pthread_exit(NULL);
+{self.sub_cc}
+"""
+            c_N2_pthread_manage = \
+f"""
+    pthread_t threads[NUM_THREADS];
+    thread_data_t thread_data[NUM_THREADS];
+    for (int i = 0; i < NUM_THREADS; i++) {self.sub_oc}
+        thread_data[i].thread_id = i;
+        thread_data[i].start_row = i * {ntt_parameters.n}/NUM_THREADS;
+        thread_data[i].end_row = (i == NUM_THREADS - 1) ? {ntt_parameters.n} : (i + 1) * ({ntt_parameters.n} / NUM_THREADS);
+        thread_data[i].x = x;
+        thread_data[i].y = y;
+        pthread_create(&threads[i], NULL, {"thread_loop" if forward_impl else "thread_loop_inv""thread_loop" if forward_impl else "thread_loop_inv"}, &thread_data[i]);
+    {self.sub_cc}
+    {self.sub_co} Wait for threads to finish
+    for (int i = 0; i < NUM_THREADS; i++) {self.sub_oc}
+        pthread_join(threads[i], NULL);
+    {self.sub_cc}
+"""
         ############################################################
 
-
-        c_N2 = \
+        c_N2 = ""
+        if self.search_space_point.is_pthread:
+            c_N2 = \
 f"""
+{c_N2_pthread_impl}
+{c_ntt_common_func_header}
+    {c_N2_pthread_manage}
+"""
+        else:
+            c_N2 = \
+f"""
+{c_ntt_common_func_header}
     for (int i = 0; i < {ntt_parameters.n}; i++) {self.sub_oc}
         y[i] = 0;
     {self.sub_cc}
@@ -579,6 +643,7 @@ f"""
 
         c_fast_fixed_r2 = \
 f"""
+{c_ntt_common_func_header}
     int t1, t2;
     int twiddle1, twiddle2;
     int cur_size;
@@ -657,6 +722,7 @@ f"(inv ? g_stat_twiddle_pows[barrett_reduce_pow((n0/n)*i)] : g_stat_inv_twiddle_
 
         c_fast_fixed_r2_recursive = \
 f"""
+{c_ntt_common_func_header}
     if (n <= {self.search_space_point.recursive_base_case}) {self.sub_oc}
         {self.sub_co} Assume y allocated by caller
         {c_N2_no_lut_twiddle_def}
@@ -785,6 +851,7 @@ f"""
         # Is a static const sufficient?
         c_fast_mr = \
 f"""
+{c_ntt_common_func_header}
     int t;
     int twiddle;
     int n_cur = {ntt_parameters.n};

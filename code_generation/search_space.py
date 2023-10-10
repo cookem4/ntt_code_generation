@@ -30,6 +30,8 @@ class Search_Space:
         bash_command_build = "make clean && make CFLAGS=\"-O3 " 
         if (self.is_omp):
             bash_command_build += " -fopenmp "
+        if (self.is_pthread):
+            bash_command_build += " -pthread "
         if (self.is_avx):
             bash_command_build += " -mavx2 "
         bash_command = bash_command_build + "\"" 
@@ -104,7 +106,7 @@ class Search_Space:
             running_sum = running_sum + int(matches[0])
         self.runtime = (running_sum / NUM_TIME_RERUN)
 
-    def __init__(self, type_str, is_lut, fixed_radix, max_mixed_radix, is_omp, is_avx, is_recursive, recursive_base_case, separate_inv_impl): 
+    def __init__(self, type_str="TYPE_N2", is_lut=True, fixed_radix=False, max_mixed_radix=False, is_omp=False, is_avx=False, is_recursive=False, recursive_base_case=0, is_pthread=False, max_pthreads=1, separate_inv_impl=True): 
         self.type_str = type_str 
         self.is_lut = is_lut 
         self.fixed_radix = fixed_radix 
@@ -112,6 +114,9 @@ class Search_Space:
         self.max_mixed_radix = max_mixed_radix 
         self.is_avx = is_avx 
         self.is_omp = is_omp 
+        # Note: pthread and omp are mutually exclusive
+        self.is_pthread = is_pthread 
+        self.max_pthreads = max_pthreads 
         self.is_recursive = is_recursive 
         self.recursive_base_case = recursive_base_case 
         # View code-size/performance tradeoff with separate
@@ -126,6 +131,8 @@ class Search_Space:
                             "_AVX" + str(int(self.is_avx)) + \
                             "_R" + str(int(self.is_recursive)) + \
                             "_RB" + str(int(self.recursive_base_case)) + \
+                            "_PT" + str(int(self.is_pthread)) + \
+                            "_NT" + str(int(self.max_pthreads)) + \
                             "_DI" + str(int(self.separate_inv_impl))
 
 def build_search_space():
@@ -165,15 +172,15 @@ def build_search_space():
                                             separate_inv_impl=True) 
                 search_space_objs.append(new_data_obj) 
     '''
-    new_data_obj = Search_Space(type_str="TYPE_FAST", \
-                                is_lut=True, \
-                                fixed_radix=True, \
-                                max_mixed_radix=2, \
-                                is_omp=True, \
-                                is_avx=True, \
-                                is_recursive=True, \
-                                recursive_base_case=16, \
-                                separate_inv_impl=True) 
+    new_data_obj = Search_Space(type_str="TYPE_N2", is_pthread=True, max_pthreads=1)
+    search_space_objs.append(new_data_obj)
+    new_data_obj = Search_Space(type_str="TYPE_N2", is_pthread=True, max_pthreads=2)
+    search_space_objs.append(new_data_obj)
+    new_data_obj = Search_Space(type_str="TYPE_N2", is_pthread=True, max_pthreads=4)
+    search_space_objs.append(new_data_obj)
+    new_data_obj = Search_Space(type_str="TYPE_N2", is_pthread=True, max_pthreads=8)
+    search_space_objs.append(new_data_obj)
+    new_data_obj = Search_Space(type_str="TYPE_N2")
     search_space_objs.append(new_data_obj)
     '''
     for separate_inv_impl in [False, True]:
