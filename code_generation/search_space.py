@@ -114,12 +114,21 @@ class Search_Space:
         self.mixed_radix = True if not fixed_radix else False
         self.max_mixed_radix = max_mixed_radix 
         self.is_avx = is_avx 
-        self.is_avx512 = False if arch_dict is None else arch_dict["avx512"]
-        self.is_avx2 = False if arch_dict is None else arch_dict["avx2"]
+        if arch_dict is None:
+            self.is_avx512 = False
+        else:
+            self.is_avx512 = arch_dict["avx512"]
+        if arch_dict is None:
+            self.is_avx2 = False
+        else:
+            self.is_avx2 = arch_dict["avx2"]
         self.is_omp = is_omp 
         # Note: pthread and omp are mutually exclusive
         self.is_pthread = is_pthread 
-        self.max_threads = max_threads if max_threads is not None else arch_dict["num_threads"]
+        if max_threads is not None:
+            self.max_threads = max_threads
+        else:
+            self.max_threads = arch_dict["num_threads"]
         self.is_recursive = is_recursive 
         self.recursive_base_case = recursive_base_case 
         # View code-size/performance tradeoff with separate
@@ -204,12 +213,21 @@ def build_search_space(arch_dict):
     new_data_obj = Search_Space(type_str="TYPE_N2")
     search_space_objs.append(new_data_obj)
     '''
-    new_data_obj = Search_Space(type_str="TYPE_N2", arch_dict=arch_dict)
-    search_space_objs.append(new_data_obj)
-    '''
     for separate_inv_impl in [False, True]:
         NTT_TYPE = "TYPE_N2"
         for is_lut in [False, True]:
+            new_data_obj = Search_Space(type_str=NTT_TYPE, \
+                                        arch_dict=arch_dict, \
+                                        is_lut=is_lut, \
+                                        fixed_radix=False, \
+                                        max_mixed_radix=1, \
+                                        is_omp=False, \
+                                        is_avx=False, \
+                                        is_recursive=False, \
+                                        recursive_base_case=0, \
+                                        separate_inv_impl=separate_inv_impl) 
+            search_space_objs.append(new_data_obj) 
+            '''
             for is_avx in [False, True]:
                 # TODO temp skip non-lut parallelization for failures due to difficult access
                 if is_lut:
@@ -217,6 +235,7 @@ def build_search_space(arch_dict):
                     if not is_avx:
                         for is_omp in [False, True]:
                             new_data_obj = Search_Space(type_str=NTT_TYPE, \
+                                                        arch_dict=arch_dict, \
                                                         is_lut=is_lut, \
                                                         fixed_radix=False, \
                                                         max_mixed_radix=1, \
@@ -229,6 +248,7 @@ def build_search_space(arch_dict):
                 else:
                     # OMP
                     new_data_obj = Search_Space(type_str=NTT_TYPE, \
+                                                arch_dict=arch_dict, \
                                                 is_lut=is_lut, \
                                                 fixed_radix=False, \
                                                 max_mixed_radix=1, \
@@ -238,6 +258,7 @@ def build_search_space(arch_dict):
                                                 recursive_base_case=0, \
                                                 separate_inv_impl=separate_inv_impl) 
                     search_space_objs.append(new_data_obj) 
+                '''
         NTT_TYPE = "TYPE_FAST"
         for is_recursive in [False, True]:
             for is_lut in [False, True]:
@@ -245,9 +266,12 @@ def build_search_space(arch_dict):
                     for recursive_base_case in recursive_base_case_range:
                         # TODO cross this with AVX and OMP
                         if not is_lut:
-                            for is_omp in [False, True]:
-                                for is_avx in [False, True]:
+                            # for is_omp in [False, True]:
+                                # for is_avx in [False, True]:
+                            for is_omp in [False]:
+                                for is_avx in [False]:
                                     new_data_obj = Search_Space(type_str=NTT_TYPE, \
+                                                                arch_dict=arch_dict, \
                                                                 is_lut=is_lut, \
                                                                 fixed_radix=True, \
                                                                 max_mixed_radix=2, \
@@ -259,6 +283,7 @@ def build_search_space(arch_dict):
                                     search_space_objs.append(new_data_obj) 
                         else:
                             new_data_obj = Search_Space(type_str=NTT_TYPE, \
+                                                        arch_dict=arch_dict, \
                                                         is_lut=is_lut, \
                                                         fixed_radix=True, \
                                                         max_mixed_radix=2, \
@@ -272,6 +297,7 @@ def build_search_space(arch_dict):
                     for is_fixed_radix in [False, True]:
                         if (is_fixed_radix):
                             new_data_obj = Search_Space(type_str=NTT_TYPE, \
+                                                        arch_dict=arch_dict, \
                                                         is_lut=is_lut, \
                                                         fixed_radix=True, \
                                                         max_mixed_radix=2, \
@@ -284,6 +310,7 @@ def build_search_space(arch_dict):
                         else:
                             for max_mixed_radix in mixed_radix_range:
                                 new_data_obj = Search_Space(type_str=NTT_TYPE, \
+                                                            arch_dict=arch_dict, \
                                                             is_lut=is_lut, \
                                                             fixed_radix=False, \
                                                             max_mixed_radix=max_mixed_radix, \
@@ -293,6 +320,5 @@ def build_search_space(arch_dict):
                                                             recursive_base_case=0, \
                                                             separate_inv_impl=separate_inv_impl) 
                                 search_space_objs.append(new_data_obj) 
-    '''
 
     return search_space_objs
