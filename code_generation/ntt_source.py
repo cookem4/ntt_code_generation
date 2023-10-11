@@ -956,6 +956,14 @@ f"""
             self.avx_reg_width = int(avx_temp/16)
         elif self.ntt_parameters.mod_prod_type == "uint32_t":
             self.avx_reg_width = int(avx_temp/32)
-        # For AVX, expand to multiple of avx reg width
+
         if (self.search_space_point.type_str == "TYPE_N2" and self.search_space_point.is_avx):
+            # For AVX, expand to multiple of avx reg width
             self.ntt_parameters = nt.NTT_Params(self.avx_reg_width * int(math.ceil(self.ntt_parameters.n / self.avx_reg_width)))
+            # For AVX, we also need to use the X and Y variables on the same
+            # width as the product - i.e. the width gets doubled. This prevents
+            # overflow when doing AVX mulitplication
+            self.ntt_parameters.mod_type = self.ntt_parameters.mod_prod_type
+            self.ntt_parameters.mod_trunc = self.ntt_parameters.mod_prod_trunc
+            self.ntt_parameters.mod_width = self.ntt_parameters.mod_prod_width
+

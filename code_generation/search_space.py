@@ -213,13 +213,6 @@ def build_search_space(arch_dict):
     new_data_obj = Search_Space(type_str="TYPE_N2")
     search_space_objs.append(new_data_obj)
     '''
-    new_data_obj = Search_Space(type_str="TYPE_N2", \
-                                arch_dict=arch_dict, \
-                                is_lut=True, \
-                                is_avx=True, \
-                                separate_inv_impl=False) 
-    search_space_objs.append(new_data_obj) 
-    '''
     for separate_inv_impl in [False, True]:
         NTT_TYPE = "TYPE_N2"
         for is_lut in [False, True]:
@@ -259,10 +252,8 @@ def build_search_space(arch_dict):
                     for recursive_base_case in recursive_base_case_range:
                         # TODO cross this with AVX and OMP
                         if not is_lut:
-                            # for is_omp in [False, True]:
-                                # for is_avx in [False, True]:
-                            for is_omp in [False]:
-                                for is_avx in [False]:
+                            for is_omp in [False, True]:
+                                for is_avx in [False, True]:
                                     new_data_obj = Search_Space(type_str=NTT_TYPE, \
                                                                 arch_dict=arch_dict, \
                                                                 is_lut=is_lut, \
@@ -313,6 +304,5 @@ def build_search_space(arch_dict):
                                                             recursive_base_case=0, \
                                                             separate_inv_impl=separate_inv_impl) 
                                 search_space_objs.append(new_data_obj) 
-    '''
 
     return search_space_objs
