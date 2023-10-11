@@ -74,7 +74,8 @@ f"""
             temp_str = \
 f"""
 {self.ntt_parameters.mod_type} modinv({self.ntt_parameters.mod_type} a, {self.ntt_parameters.mod_type} m) {self.sub_oc}
-    {self.ntt_parameters.mod_type} q, t, r, newt, newr, tempt, tempr;
+    {self.sub_co} Usage here doesn't count since it's a test-only feauture. Make signed to handle signed comparisons in the loop 
+    int64_t q, t, r, newt, newr, tempt, tempr;
     t = 0;
     newt = 1;
     r = m;
@@ -136,10 +137,10 @@ f"""
 
             temp_str = \
 f"""
-    {self.ntt_parameters.mod_type} *x = malloc({self.ntt_parameters.n} * sizeof(int));
-    {self.ntt_parameters.mod_type} *y = malloc({self.ntt_parameters.n} * sizeof(int));
-    {self.ntt_parameters.mod_type} *x_inv = malloc({self.ntt_parameters.n} * sizeof(int));
-    {self.ntt_parameters.mod_type} *y_inv = malloc({self.ntt_parameters.n} * sizeof(int));
+    {self.ntt_parameters.mod_type} *x = malloc({self.ntt_parameters.n} * sizeof({self.ntt_parameters.mod_type}));
+    {self.ntt_parameters.mod_type} *y = malloc({self.ntt_parameters.n} * sizeof({self.ntt_parameters.mod_type}));
+    {self.ntt_parameters.mod_type} *x_inv = malloc({self.ntt_parameters.n} * sizeof({self.ntt_parameters.mod_type}));
+    {self.ntt_parameters.mod_type} *y_inv = malloc({self.ntt_parameters.n} * sizeof({self.ntt_parameters.mod_type}));
     for ({self.ntt_parameters.n_type} i = 0; i < {self.ntt_parameters.n}; i++) {self.sub_oc}
         {self.sub_co} x[i] = rand() % {self.ntt_parameters.mod};
         x[i] = i;
@@ -185,13 +186,13 @@ f"""
         # Always defined
         c_barrett_reduction = \
 f"""
-{self.ntt_parameters.mod_type} barrett_reduce({self.ntt_parameters.mod_type} a) {self.sub_oc}
+{self.ntt_parameters.mod_type} barrett_reduce({self.ntt_parameters.mod_prod_type} a) {self.sub_oc}
   {self.ntt_parameters.barrett_q_type} q;
-  {self.ntt_parameters.mod_type} t;
-  q = (a*(({self.ntt_parameters.barrett_q_type}){self.ntt_parameters.barrett_r})) >> {self.ntt_parameters.barrett_k};
-  t = a - ({self.ntt_parameters.mod_type}) (q * {self.ntt_parameters.mod});
+  {self.ntt_parameters.barrett_q_type} t;
+  q = (a*({self.ntt_parameters.barrett_q_type}){self.ntt_parameters.barrett_r}) >> {self.ntt_parameters.barrett_k};
+  t = a - (q * {self.ntt_parameters.mod});
   t = t >= {self.ntt_parameters.mod} ? t - {self.ntt_parameters.mod} : t;
-  return t;
+  return ({self.ntt_parameters.mod_type}) t;
 {self.sub_cc}
 """
 
@@ -223,10 +224,10 @@ __m{self.avx_width_str}i barrett_reduce_avx(__m{self.avx_width_str}i a) {self.su
         # Reduces the LUT mapping i*j instead of doing the mod operation
         c_power_barrett_reduction = \
 f"""
-{self.ntt_parameters.n_type} barrett_reduce_pow({self.ntt_parameters.n_type} a) {self.sub_oc}
+{self.ntt_parameters.n_type} barrett_reduce_pow({self.ntt_parameters.n_prod_type} a) {self.sub_oc}
   {self.ntt_parameters.barrett_q_pow_type} q;
   {self.ntt_parameters.n_type} t;
-  q = (a*(({self.ntt_parameters.barrett_q_pow_type}) {self.ntt_parameters.barrett_r_pow})) >> {self.ntt_parameters.barrett_k_pow};
+  q = (a*({self.ntt_parameters.barrett_q_pow_type}){self.ntt_parameters.barrett_r_pow}) >> {self.ntt_parameters.barrett_k_pow};
   t = a - ({self.ntt_parameters.n_type}) (q * {self.ntt_parameters.n});
   t = t >= {self.ntt_parameters.n} ? t - {self.ntt_parameters.n} : t;
   return t;
@@ -440,7 +441,7 @@ f"""
 f"""
             twiddle = j == 0 ? 1 : barrett_reduce(twiddle * twiddle_fact);
             temp = barrett_reduce(x[j] * twiddle);
-            y[i] = y[i] + temp > {ntt_parameters.mod} ? y[i] + temp - {ntt_parameters.mod} : y[i] + temp;
+            y[i] = y[i] + temp >= {ntt_parameters.mod} ? y[i] + temp - {ntt_parameters.mod} : y[i] + temp;
 """
             if self.search_space_point.separate_inv_impl:
                 c_N2_outer_twiddle_incr = \
@@ -465,7 +466,8 @@ f"""
                     else:
                         c_N2_inner_impl = \
 f"""
-            y[i] = barrett_reduce(y[i] + x[j] * g_stat_twiddle_pows[barrett_reduce_pow(i*j)]);
+            {ntt_parameters.mod_type} temp = barrett_reduce(x[j] * g_stat_twiddle_pows[barrett_reduce_pow(i*j)]);
+            y[i] = y[i] + temp >= {ntt_parameters.mod} ? y[i] + temp - {ntt_parameters.mod} : y[i] + temp;
 """
                 else:
                     if self.search_space_point.is_avx:
@@ -476,7 +478,8 @@ f"""
                     else:
                         c_N2_inner_impl = \
 f"""
-            y[i] = barrett_reduce(y[i] + x[j] * g_stat_inv_twiddle_pows[barrett_reduce_pow(i*j)]);
+            {ntt_parameters.mod_type} temp = barrett_reduce(x[j] * g_stat_inv_twiddle_pows[barrett_reduce_pow(i*j)]);
+            y[i] = y[i] + temp >= {ntt_parameters.mod} ? y[i] + temp - {ntt_parameters.mod} : y[i] + temp;
 """
             else:
                 if self.search_space_point.is_avx:
@@ -487,7 +490,8 @@ f"""
                 else:
                     c_N2_inner_impl = \
 f"""
-            y[i] = barrett_reduce(y[i] + x[j] * (inv ? g_stat_inv_twiddle_pows[barrett_reduce_pow(i*j)] : g_stat_twiddle_pows[barrett_reduce_pow(i*j)]));
+            {ntt_parameters.mod_type} temp = barrett_reduce(x[j] * (inv ? g_stat_inv_twiddle_pows[barrett_reduce_pow(i*j)] : g_stat_twiddle_pows[barrett_reduce_pow(i*j)]));
+            y[i] = y[i] + temp >= {ntt_parameters.mod} ? y[i] + temp - {ntt_parameters.mod} : y[i] + temp;
 """
 
         c_N2_pthread_impl = ""
@@ -610,7 +614,8 @@ f"""
                     c_R2_twiddle1_twiddle2_assign = \
 f"""
                 twiddle1 = g_stat_twiddle_pows[barrett_reduce_pow(sub_trans_idx*stride)];
-                twiddle2 = g_stat_twiddle_pows[barrett_reduce_pow(sub_trans_idx*stride + {ntt_parameters.n}>>1)];
+                {ntt_parameters.n_type} temp = barrett_reduce_pow(sub_trans_idx*stride);
+                twiddle2 = g_stat_twiddle_pows[temp + {ntt_parameters.n}>>1 > {ntt_parameters.n} ? temp + {ntt_parameters.n}>>1 - {ntt_parameters.n} : temp + {ntt_parameters.n}>>1];
 """
 
                 else:
@@ -621,7 +626,8 @@ f"""
                     c_R2_twiddle1_twiddle2_assign = \
 f"""
                 twiddle1 = g_stat_inv_twiddle_pows[barrett_reduce_pow(sub_trans_idx*stride)];
-                twiddle2 = g_stat_inv_twiddle_pows[barrett_reduce_pow(sub_trans_idx*stride + {ntt_parameters.n}>>1)];
+                {ntt_parameters.n_type} temp = barrett_reduce_pow(sub_trans_idx*stride);
+                twiddle2 = g_stat_inv_twiddle_pows[temp + {ntt_parameters.n}>>1 > {ntt_parameters.n} ? temp + {ntt_parameters.n}>>1 - {ntt_parameters.n} : temp + {ntt_parameters.n}>>1];
 """
 
             else:
@@ -632,7 +638,9 @@ f"""
                 c_R2_twiddle1_twiddle2_assign = \
 f"""
                 twiddle1 = inv ? g_stat_inv_twiddle_pows[barrett_reduce_pow(sub_trans_idx*stride)] : g_stat_twiddle_pows[barrett_reduce_pow(sub_trans_idx*stride)];
-                twiddle2 = inv ? g_stat_inv_twiddle_pows[barrett_reduce_pow(sub_trans_idx*stride)] : g_stat_twiddle_pows[barrett_reduce_pow(sub_trans_idx*stride + {ntt_parameters.n}>>1)];
+                {ntt_parameters.n_type} temp = barrett_reduce_pow(sub_trans_idx*stride);
+                {ntt_parameters.n_type} reduced_pow = temp + {ntt_parameters.n}>>1 > {ntt_parameters.n} ? temp + {ntt_parameters.n}>>1 - {ntt_parameters.n} : temp + {ntt_parameters.n}>>1;
+                twiddle2 = inv ? g_stat_inv_twiddle_pows[reduced_pow] : g_stat_twiddle_pows[reduced_pow];
 """
 
         ############################################################
@@ -656,11 +664,14 @@ f"""
         {self.sub_co} For each of the "sub-transforms" in the CT butterfly
         for ({ntt_parameters.n_type} sub_trans_idx = 0; sub_trans_idx < {ntt_parameters.n}/cur_size; sub_trans_idx++) {self.sub_oc}
             {self.sub_co} We take steps within our sub transform
+            {ntt_parameters.mod_type} temp;
             for ({ntt_parameters.n_type} step = 0; step < stride; step++) {self.sub_oc}
                 cur_idx = sub_trans_idx*cur_size + step;
                 {c_R2_twiddle1_twiddle2_assign}
-                y[cur_idx + stride] = barrett_reduce(y[cur_idx] + y[cur_idx + stride] * twiddle2);
-                y[cur_idx] = barrett_reduce(y[cur_idx] + y[cur_idx + stride] * twiddle1);
+                temp = barrett_reduce(y[cur_idx + stride] * twiddle2);
+                y[cur_idx + stride] = y[cur_idx] + temp >= {ntt_parameters.mod} ? y[cur_idx] + temp - {ntt_parameters.mod} : y[cur_idx] + temp;
+                temp = barrett_reduce(y[cur_idx + stride] * twiddle1);
+                y[cur_idx] = y[cur_idx] + temp >= {ntt_parameters.mod} ? y[cur_idx] + temp - {ntt_parameters.mod} : y[cur_idx] + temp;
             {self.sub_cc}
         {self.sub_cc}
     {self.sub_cc}
@@ -735,10 +746,10 @@ f"""
             {c_N2_outer_twiddle_incr}
         {self.sub_cc}
     {self.sub_cc} else {self.sub_oc}
-        {self.ntt_parameters.mod_type} * x_e = malloc(n>>1 * sizeof(int));
-        {self.ntt_parameters.mod_type} * x_o = malloc(n>>1 * sizeof(int));
-        {self.ntt_parameters.mod_type} * y_e = calloc(n>>1 , sizeof(int));
-        {self.ntt_parameters.mod_type} * y_o = calloc(n>>1 , sizeof(int));
+        {self.ntt_parameters.mod_type} * x_e = malloc(n>>1 * sizeof({self.ntt_parameters.mod_type}));
+        {self.ntt_parameters.mod_type} * x_o = malloc(n>>1 * sizeof({self.ntt_parameters.mod_type}));
+        {self.ntt_parameters.mod_type} * y_e = calloc(n>>1 , sizeof({self.ntt_parameters.mod_type}));
+        {self.ntt_parameters.mod_type} * y_o = calloc(n>>1 , sizeof({self.ntt_parameters.mod_type}));
         for ({self.ntt_parameters.n_type} j = 0; j < n>>1; j++) {self.sub_oc}
             x_e[j] = x[j<<1 + 0];
             x_o[j] = x[j<<1 + 1];
@@ -809,7 +820,7 @@ f"""
 f"""
                         {ntt_parameters.mod_type} red1 = barrett_reduce(running_pow_j_3 * running_pow_i_2);
                         {ntt_parameters.mod_type} red2 = barrett_reduce(red2 * y_t[butterfly_j]);
-                        y[dst_idx] =  barrett_reduce(y[dst_idx] + red2);
+                        y[dst_idx] =  (y[dst_idx] + red2) > {ntt_parameters.mod} > (y[dst_idx] + red2) - {ntt_parameters.mod} : (y[dst_idx] + red2);
                         running_pow_j_3 = barrett_reduce(running_pow_j_3 * running_pow_j_2);
 """
             if self.search_space_point.separate_inv_impl:
@@ -870,7 +881,7 @@ f"""
             {self.sub_co} We take steps within our self.sub transform
             for ({ntt_parameters.n_type} ni = 0; ni < n2; ni++) {self.sub_oc}
                 {self.sub_co} TODO any way around this dynamic memory allocation?
-                {ntt_parameters.mod_type} *y_t = calloc(g_stat_prime_factors[fact_cnt], sizeof(int));
+                {ntt_parameters.mod_type} *y_t = calloc(g_stat_prime_factors[fact_cnt], sizeof({self.ntt_parameters.mod_type}));
                 for ({ntt_parameters.n_type} butterfly_i = 0; butterfly_i < g_stat_prime_factors[fact_cnt]; butterfly_i++) {self.sub_oc}
                     dst_idx = n1*n_cur + ni + butterfly_i*n2;
                     y_t[butterfly_i] = y[dst_idx]; {self.sub_co} Temp save

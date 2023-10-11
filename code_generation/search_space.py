@@ -138,6 +138,11 @@ class Search_Space:
                             "_NT" + str(int(self.max_threads)) + \
                             "_DI" + str(int(self.separate_inv_impl))
 
+####################
+# TODO when traversing the search space there is no nuance with memory footprint, max heap size, avx usage
+# The nuance comes from multi-threaded vs single-threaded for the NTT N^2 vs. NlogN inplace/recursive
+####################
+
 def build_search_space(arch_dict):
     # TODO might want to move these vectors into a file instead of looping over them
     # manually
