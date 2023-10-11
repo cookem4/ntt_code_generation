@@ -50,7 +50,7 @@ class Ntt_Source:
             self.recursive_str = ""
             self.recursive_call_str = ""
             if (self.search_space_point.is_recursive):
-                self.recursive_str += "{self.ntt_parameters.n_type} n, {self.ntt_parameters.n_type} n0,"
+                self.recursive_str += f"{self.ntt_parameters.n_type} n, {self.ntt_parameters.n_type} n0,"
                 self.recursive_call_str = f"{self.ntt_parameters.n}, {self.ntt_parameters.n},"
             file.write(temp_str)
             # Inv flag only matters when we share an implementation between forward
@@ -202,21 +202,21 @@ f"""
             c_barrett_reduction_avx = \
 f"""
 __m{self.avx_width_str}i barrett_reduce_avx(__m{self.avx_width_str}i a) {self.sub_oc}
-  __m{self.avx_width_str}i barrett_r_avx   = _mm{self.avx_width_str}_set1_epi{self.ntt_parameters.mod_trunc}({self.ntt_parameters.barrett_r});
-  __m{self.avx_width_str}i mod_avx         = _mm{self.avx_width_str}_set1_epi{self.ntt_parameters.mod_trunc}({self.ntt_parameters.mod});
+  __m{self.avx_width_str}i barrett_r_avx = _mm{self.avx_width_str}_set1_epi{self.ntt_parameters.mod_prod_trunc}({self.ntt_parameters.barrett_r});
+  __m{self.avx_width_str}i mod_avx = _mm{self.avx_width_str}_set1_epi{self.ntt_parameters.mod_prod_trunc}({self.ntt_parameters.mod});
   __m{self.avx_width_str}i q, t;
 
   {self.sub_co} Calculate q = (a * barrett_r) >> barrett_k;
-  q = _mm{self.avx_width_str}_mullo_epi{self.ntt_parameters.mod_trunc}(a, barrett_r_avx);
-  q = _mm{self.avx_width_str}_srli_epi{self.ntt_parameters.mod_trunc}(q, {self.ntt_parameters.barrett_k});
+  q = _mm{self.avx_width_str}_mullo_epi{self.ntt_parameters.mod_prod_trunc}(a, barrett_r_avx);
+  q = _mm{self.avx_width_str}_srli_epi{self.ntt_parameters.mod_prod_trunc}(q, {self.ntt_parameters.barrett_k});
 
   {self.sub_co} Calculate t = a - (q * mod);
-  t = _mm{self.avx_width_str}_mullo_epi{self.ntt_parameters.mod_trunc}(q, mod_avx);
-  t = _mm{self.avx_width_str}_sub_epi{self.ntt_parameters.mod_trunc}(a, t);
+  t = _mm{self.avx_width_str}_mullo_epi{self.ntt_parameters.mod_prod_trunc}(q, mod_avx);
+  t = _mm{self.avx_width_str}_sub_epi{self.ntt_parameters.mod_prod_trunc}(a, t);
 
   {self.sub_co} Check if t is greater than or equal to mod
-  __m{self.avx_width_str}i cmp = _mm{self.avx_width_str}_cmpgt_epi{self.ntt_parameters.mod_trunc}(t, mod_avx);
-  t = _mm{self.avx_width_str}_sub_epi{self.ntt_parameters.mod_trunc}(t, _mm{self.avx_width_str}_and_si{self.avx_width_str}(cmp, mod_avx));
+  __m{self.avx_width_str}i cmp = _mm{self.avx_width_str}_cmpgt_epi{self.ntt_parameters.mod_prod_trunc}(t, mod_avx);
+  t = _mm{self.avx_width_str}_sub_epi{self.ntt_parameters.mod_prod_trunc}(t, _mm{self.avx_width_str}_and_si{self.avx_width_str}(cmp, mod_avx));
   return t;
 {self.sub_cc}
 """
@@ -326,9 +326,9 @@ typedef struct {self.sub_oc}
             # If no separate inv impl then build a function wrapper for ntt_inv that goes to ntt_fwd
             c_ntt_str += \
 f"""
-void ntt_impl_inv({self.ntt_parameters.mod_type} *x, {self.ntt_parameters.mod_type} *y, uint8_t inv) {self.sub_oc}
+void ntt_impl_inv({self.ntt_parameters.mod_type} *x, {self.ntt_parameters.mod_type} *y, {self.recursive_str} uint8_t inv) {self.sub_oc}
     {self.sub_co} The illusion of choice
-    ntt_impl(x, y, 1);
+    ntt_impl(x, y, {self.recursive_call_str} 1);
 {self.sub_cc}
 """
         c_ntt_impl_tot_str += c_ntt_str
@@ -373,18 +373,18 @@ f"""
                 c_N2_avx_parallel_init = \
 f"""
         __m{self.avx_width_str}i avx_result, avx_reduction, vec_a, vec_b;
-        {self.ntt_parameters.mod_type} avx_twiddle_arr[{self.avx_reg_width}];
-        {self.ntt_parameters.mod_type} hsum[8];
-        {self.ntt_parameters.mod_type} temp_sum;
+        {self.ntt_parameters.mod_prod_type} avx_twiddle_arr[{self.avx_reg_width}];
+        {self.ntt_parameters.mod_prod_type} hsum[{self.avx_reg_width}];
+        {self.ntt_parameters.mod_prod_type} temp_sum;
         uint8_t avx_load_cntr = 0;
 """
             else:
                 c_N2_avx_init = \
 f"""
     __m{self.avx_width_str}i avx_result, avx_reduction, vec_a, vec_b;
-    {self.ntt_parameters.mod_type} avx_twiddle_arr[{self.avx_reg_width}];
-    {self.ntt_parameters.mod_type} hsum[8];
-    {self.ntt_parameters.mod_type} temp_sum;
+    {self.ntt_parameters.mod_prod_type} avx_twiddle_arr[{self.avx_reg_width}];
+    {self.ntt_parameters.mod_prod_type} hsum[{self.avx_reg_width}];
+    {self.ntt_parameters.mod_prod_type} temp_sum;
     uint8_t avx_load_cntr = 0;
 """
             c_N2_avx_reg_accum = \
@@ -393,14 +393,14 @@ f"""
             if (avx_load_cntr == {self.avx_reg_width}) {self.sub_oc}
                 // Load AVX
                 vec_a = _mm{self.avx_width_str}_loadu_si{self.avx_width_str}((__m{self.avx_width_str}i*)avx_twiddle_arr);
-                vec_b = _mm{self.avx_width_str}_loadu_si{self.avx_width_str}((__m{self.avx_width_str}i*)&x[j - 7]);
+                vec_b = _mm{self.avx_width_str}_loadu_si{self.avx_width_str}((__m{self.avx_width_str}i*)&x[j - {self.avx_reg_width-1}]);
                 // Perform AVX operation
-                avx_result = _mm{self.avx_width_str}_mullo_epi{self.ntt_parameters.mod_trunc}(vec_a, vec_b);
+                avx_result = _mm{self.avx_width_str}_mullo_epi{self.ntt_parameters.mod_prod_trunc}(vec_a, vec_b);
                 // Perform AVX reduction
                 avx_result = barrett_reduce_avx(avx_result);
                 _mm{self.avx_width_str}_storeu_si{self.avx_width_str}((__m{self.avx_width_str}i*)hsum, avx_result);
                 temp_sum = 0;
-                for (uint8_t i = 0; i < {self.ntt_parameters.avx_reg_width}; i++) {self.sub_oc}
+                for (uint8_t i = 0; i < {self.avx_reg_width}; i++) {self.sub_oc}
                     temp_sum += hsum[i];
                 {self.sub_cc}
                 y[i] = y[i] + temp_sum;
@@ -820,7 +820,7 @@ f"""
 f"""
                         {ntt_parameters.mod_type} red1 = barrett_reduce(running_pow_j_3 * running_pow_i_2);
                         {ntt_parameters.mod_type} red2 = barrett_reduce(red2 * y_t[butterfly_j]);
-                        y[dst_idx] =  (y[dst_idx] + red2) > {ntt_parameters.mod} > (y[dst_idx] + red2) - {ntt_parameters.mod} : (y[dst_idx] + red2);
+                        y[dst_idx] =  (y[dst_idx] + red2) > {ntt_parameters.mod} ? (y[dst_idx] + red2) - {ntt_parameters.mod} : (y[dst_idx] + red2);
                         running_pow_j_3 = barrett_reduce(running_pow_j_3 * running_pow_j_2);
 """
             if self.search_space_point.separate_inv_impl:
@@ -950,12 +950,12 @@ f"""
         if self.search_space_point.is_avx512:
             avx_temp = 512
             self.avx_width_str = str(avx_temp)
-        if self.ntt_parameters.mod_type == "uint8_t":
-            self.avx_reg_width = avx_temp/8
-        elif self.ntt_parameters.mod_type == "uint16_t":
-            self.avx_reg_width = avx_temp/16
-        elif self.ntt_parameters.mod_type == "uint32_t":
-            self.avx_reg_width = avx_temp/32
+        if self.ntt_parameters.mod_prod_type == "uint8_t":
+            self.avx_reg_width = int(avx_temp/8)
+        elif self.ntt_parameters.mod_prod_type == "uint16_t":
+            self.avx_reg_width = int(avx_temp/16)
+        elif self.ntt_parameters.mod_prod_type == "uint32_t":
+            self.avx_reg_width = int(avx_temp/32)
         # For AVX, expand to multiple of avx reg width
         if (self.search_space_point.type_str == "TYPE_N2" and self.search_space_point.is_avx):
-            self.ntt_parameters = nt.NTT_Params(self.avx_reg_width * math.ceil(self.ntt_parameters.n / self.avx_reg_width))
+            self.ntt_parameters = nt.NTT_Params(self.avx_reg_width * int(math.ceil(self.ntt_parameters.n / self.avx_reg_width)))

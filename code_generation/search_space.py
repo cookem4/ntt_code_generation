@@ -107,7 +107,7 @@ class Search_Space:
             running_sum = running_sum + int(matches[0])
         self.runtime = (running_sum / NUM_TIME_RERUN)
 
-    def __init__(self, arch_dict=None, type_str="TYPE_N2", is_lut=True, fixed_radix=False, max_mixed_radix=False, is_omp=False, is_avx=False, is_recursive=False, recursive_base_case=0, is_pthread=False, max_threads=None, separate_inv_impl=True): 
+    def __init__(self, arch_dict=None, type_str="TYPE_N2", is_lut=True, fixed_radix=False, max_mixed_radix=1, is_omp=False, is_avx=False, is_recursive=False, recursive_base_case=0, is_pthread=False, max_threads=None, separate_inv_impl=True): 
         self.type_str = type_str 
         self.is_lut = is_lut 
         self.fixed_radix = fixed_radix 
@@ -213,21 +213,16 @@ def build_search_space(arch_dict):
     new_data_obj = Search_Space(type_str="TYPE_N2")
     search_space_objs.append(new_data_obj)
     '''
+    new_data_obj = Search_Space(type_str="TYPE_N2", \
+                                arch_dict=arch_dict, \
+                                is_lut=True, \
+                                is_avx=True, \
+                                separate_inv_impl=False) 
+    search_space_objs.append(new_data_obj) 
+    '''
     for separate_inv_impl in [False, True]:
         NTT_TYPE = "TYPE_N2"
         for is_lut in [False, True]:
-            new_data_obj = Search_Space(type_str=NTT_TYPE, \
-                                        arch_dict=arch_dict, \
-                                        is_lut=is_lut, \
-                                        fixed_radix=False, \
-                                        max_mixed_radix=1, \
-                                        is_omp=False, \
-                                        is_avx=False, \
-                                        is_recursive=False, \
-                                        recursive_base_case=0, \
-                                        separate_inv_impl=separate_inv_impl) 
-            search_space_objs.append(new_data_obj) 
-            '''
             for is_avx in [False, True]:
                 # TODO temp skip non-lut parallelization for failures due to difficult access
                 if is_lut:
@@ -246,19 +241,17 @@ def build_search_space(arch_dict):
                                                         separate_inv_impl=separate_inv_impl) 
                             search_space_objs.append(new_data_obj) 
                 else:
-                    # OMP
                     new_data_obj = Search_Space(type_str=NTT_TYPE, \
                                                 arch_dict=arch_dict, \
                                                 is_lut=is_lut, \
                                                 fixed_radix=False, \
                                                 max_mixed_radix=1, \
-                                                is_omp=True, \
+                                                is_omp=False, \
                                                 is_avx=is_avx, \
                                                 is_recursive=False, \
                                                 recursive_base_case=0, \
                                                 separate_inv_impl=separate_inv_impl) 
                     search_space_objs.append(new_data_obj) 
-                '''
         NTT_TYPE = "TYPE_FAST"
         for is_recursive in [False, True]:
             for is_lut in [False, True]:
@@ -320,5 +313,6 @@ def build_search_space(arch_dict):
                                                             recursive_base_case=0, \
                                                             separate_inv_impl=separate_inv_impl) 
                                 search_space_objs.append(new_data_obj) 
+    '''
 
     return search_space_objs

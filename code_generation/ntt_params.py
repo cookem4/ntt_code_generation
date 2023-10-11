@@ -78,6 +78,7 @@ class NTT_Params:
         self.barrett_q_pow_type  = self.set_type_str(self.n_prod_width + self.barrett_r_pow_width)
         # Assign integer widths based on truncating widths to nearest word size
         self.mod_trunc = self.set_type_trunc(self.mod_width)
+        self.mod_prod_trunc = self.set_type_trunc(self.mod_prod_width)
 
 def is_prime(n):
     if (n & 1 == 0):
