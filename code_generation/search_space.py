@@ -1,4 +1,5 @@
-
+import ntt_source as ns
+import ntt_params as nt
 import subprocess
 import re
 
@@ -20,27 +21,92 @@ class Search_Space:
     # These parameters set by running the test suite
     code_size = 0
     max_heap = 0
+    max_stack = 0
     total_mem = 0
     instr_ret = 0
     runtime = 0
+    prog_name = "./ntt_test"
 
-    # TODO worth collecting cache hit data?
+    def set_runtime(self):
+        # Check runtime with flag 
+        NUM_TIME_RERUN = 10
+        running_sum = 0;
+        bash_cmd = self.bash_command_build + " -DDO_TIME=1 \"" 
+        # Compile with timing 
+        output = run_bash_cmd(bash_cmd) 
+        for i in range(NUM_TIME_RERUN):
+            # Execute 
+            output = run_bash_cmd(self.prog_name) 
+            matches = re.findall(r"TIME\:\s+(\d+)\s+us", output)
+            running_sum = running_sum + int(matches[0])
+        self.runtime = (running_sum / NUM_TIME_RERUN)
+        print(f"Runtime for {self.variant_name} is {self.runtime}")
+
+    def set_heap_size(self):
+        # Build first
+        bash_command = self.bash_command_build + " \"" 
+        output = run_bash_cmd(bash_command) 
+        bash_command = "valgrind --tool=massif " + self.prog_name 
+        output = run_bash_cmd(bash_command) 
+        # Parse the massif output 
+        bash_command = "ls massif* | xargs -I {} ms_print {}" 
+        output = run_bash_cmd(bash_command) 
+        massif_pattern = r"(\d+)\s+([\d,]+)\s+([\d,]+)\s+([\d,]+)\s+([\d,]+)\s+([\d,]+)"
+        # The last line looks like this:
+        # --------------------------------------------------------------------------------
+        #   n        time(i)         total(B)   useful-heap(B) extra-heap(B)    stacks(B)
+        # --------------------------------------------------------------------------------
+        #  10        206,103            2,376            2,320            56            0
+        # We want the total(B) argument
+        matches = re.findall(massif_pattern, output)
+        peak_match = re.findall("(\d+)\s+\(peak\)", output)
+        # Find max manually 
+        this_max = int(matches[0][2].replace(",","")) 
+        for i in matches[1:-1]: 
+            if int(i[2].replace(",","")) > this_max: 
+                this_max = int(i[2].replace(",","")) 
+        self.max_heap = this_max
+        bash_command = "rm massif*" 
+        output = run_bash_cmd(bash_command) 
+        print(f"Peak heap size for {self.variant_name} is {self.max_heap}")
+
+    def set_stack_size(self):
+        # Two options:
+        # 1. Use stack token allocation
+        # 2. Only calculate based on an estimation
+        # of intrinsic data needed for recursive definitions, otherwise 
+        # stack size will likely be insignificant, other than arrays local to
+        # functions
+
+        # Doing option 1
+        bash_cmd = self.bash_command_build + " -DCHECK_STACK=1 \"" 
+        # Compile with stack 
+        output = run_bash_cmd(bash_cmd) 
+        print("Build " + bash_cmd)
+        # Run program
+        output = run_bash_cmd(self.prog_name) 
+        print(output)
+        print(f"Peak stack size for {self.variant_name} is {self.max_stack}")
+
+    def set_code_size(self):
+        # Check code size in B 
+        # Build first
+        bash_command = self.bash_command_build + " \"" 
+        output = run_bash_cmd(bash_command) 
+        bash_command = "size ntt_target.o" 
+        output = run_bash_cmd(bash_command) 
+        matches = re.findall(r"\d+\s+\d+\s+\d+\s+(\d+)", output)
+        self.code_size = int(matches[0])
+        print(f"Code size for {self.variant_name} is {self.code_size}")
+
+    # Full suite of tests, not done by pruning
     def run_test_suite(self):
-        PROG_NAME = "./ntt_test" 
-        # bash_command_build = "make clean && make CFLAGS=\"-O0 -g" 
-        bash_command_build = "make clean && make CFLAGS=\"-O3 " 
-        if (self.is_omp):
-            bash_command_build += " -fopenmp "
-        if (self.is_pthread):
-            bash_command_build += " -pthread "
-        if (self.is_avx):
-            bash_command_build += " -mavx2 "
-        bash_command = bash_command_build + "\"" 
+        bash_command = self.bash_command_build + "\"" 
         print(bash_command)
         # Compile the program 
         output = run_bash_cmd(bash_command) 
         # Run the program 
-        output = run_bash_cmd(PROG_NAME) 
+        output = run_bash_cmd(self.prog_name) 
         print(output)
         if (output.find("PASS") != -1): 
             print("PASSED for NTT: " + self.variant_name) 
@@ -51,7 +117,7 @@ class Search_Space:
         # valgrind --tool=cachegrind,massif,callgrind 
         # Can then run callgrind_annotate or ms_print for the given callgrind log 
 
-        bash_command = "valgrind --tool=massif " + PROG_NAME 
+        bash_command = "valgrind --tool=massif " + self.prog_name 
         output = run_bash_cmd(bash_command) 
         # Parse the massif output 
         bash_command = "ls massif* | xargs -I {} ms_print {}" 
@@ -76,7 +142,7 @@ class Search_Space:
 
         # Skip callgrind if parallel
         if (not self.is_omp and not self.is_pthread):
-            bash_command = "valgrind --tool=callgrind " + PROG_NAME 
+            bash_command = "valgrind --tool=callgrind " + self.prog_name 
             output = run_bash_cmd(bash_command) 
             # Parse the massif output 
             bash_command = "ls callgrind* | xargs -I {} callgrind_annotate {}" 
@@ -97,17 +163,32 @@ class Search_Space:
         # Check runtime with flag 
         NUM_TIME_RERUN = 10
         running_sum = 0;
-        bash_command_build = bash_command_build + " -DDO_TIME=1 \"" 
+        bash_cmd = self.bash_command_build + " -DDO_TIME=1 \"" 
         # Compile with timing 
-        output = run_bash_cmd(bash_command_build) 
+        output = run_bash_cmd(bash_cmd) 
         for i in range(NUM_TIME_RERUN):
             # Execute 
-            output = run_bash_cmd(PROG_NAME) 
+            output = run_bash_cmd(self.prog_name) 
             matches = re.findall(r"TIME\:\s+(\d+)\s+us", output)
             running_sum = running_sum + int(matches[0])
         self.runtime = (running_sum / NUM_TIME_RERUN)
 
-    def __init__(self, arch_dict=None, type_str="TYPE_N2", is_lut=True, fixed_radix=False, max_mixed_radix=1, is_omp=False, is_avx=False, is_recursive=False, recursive_base_case=0, is_pthread=False, max_threads=None, separate_inv_impl=True): 
+    def set_build_cmd(self):
+        self.bash_command_build = "make clean && make CFLAGS=\" " + self.optimization_mode
+        if (self.is_omp):
+            self.bash_command_build += " -fopenmp "
+        if (self.is_pthread):
+            self.bash_command_build += " -pthread "
+        if (self.is_avx):
+            self.bash_command_build += " -mavx2 "
+
+    def __init__(self, optimization_mode=" -O3 ", arch_dict=None, \
+            type_str="TYPE_N2", is_lut=True, fixed_radix=False, \
+            max_mixed_radix=1, is_omp=False, is_avx=False, is_recursive=False, \
+            recursive_base_case=0, is_pthread=False, max_threads=None, \
+            separate_inv_impl=True, ntt_parameters=None): 
+        self.ntt_parameters=ntt_parameters
+        self.optimization_mode=optimization_mode
         self.type_str = type_str 
         self.is_lut = is_lut 
         self.fixed_radix = fixed_radix 
@@ -146,112 +227,62 @@ class Search_Space:
                             "_PT" + str(int(self.is_pthread)) + \
                             "_NT" + str(int(self.max_threads)) + \
                             "_DI" + str(int(self.separate_inv_impl))
+        self.set_build_cmd()
 
 ####################
 # TODO when traversing the search space there is no nuance with memory footprint, max heap size, avx usage
 # The nuance comes from multi-threaded vs single-threaded for the NTT N^2 vs. NlogN inplace/recursive
 ####################
 
-def build_search_space(arch_dict):
+def build_search_space(arch_dict, ntt_parameters):
     # TODO might want to move these vectors into a file instead of looping over them
     # manually
     mixed_radix_range = [3, 5, 7, 11, 13]
+    # TODO recursive_base_case=32 fails with N=1024?
     recursive_base_case_range = [8, 16, 32, 64, 128, 256]
     search_space_objs = [] 
     # Cross product of search space creates a set of NTT objects with certain attributes
-    '''
-    NTT_TYPE = "TYPE_FAST"
-    for is_lut in [False, True]:
-        for recursive_base_case in recursive_base_case_range:
-            # TODO cross this with AVX and OMP
-            if not is_lut:
-                for is_omp in [False, True]:
-                    for is_avx in [False, True]:
-                        new_data_obj = Search_Space(type_str=NTT_TYPE, \
-                                                    is_lut=is_lut, \
-                                                    fixed_radix=True, \
-                                                    max_mixed_radix=2, \
-                                                    is_omp=is_omp, \
-                                                    is_avx=is_avx, \
-                                                    is_recursive=True, \
-                                                    recursive_base_case=recursive_base_case, \
-                                                    separate_inv_impl=True) 
-                        search_space_objs.append(new_data_obj) 
-            else:
-                new_data_obj = Search_Space(type_str=NTT_TYPE, \
-                                            is_lut=is_lut, \
-                                            fixed_radix=True, \
-                                            max_mixed_radix=2, \
-                                            is_omp=False, \
-                                            is_avx=False, \
-                                            is_recursive=True, \
-                                            recursive_base_case=recursive_base_case, \
-                                            separate_inv_impl=True) 
-                search_space_objs.append(new_data_obj) 
-    '''
-    '''
-    new_data_obj = Search_Space(type_str="TYPE_N2", is_pthread=True, max_threads=1)
-    search_space_objs.append(new_data_obj)
-    new_data_obj = Search_Space(type_str="TYPE_N2", is_pthread=True, max_threads=2)
-    search_space_objs.append(new_data_obj)
-    new_data_obj = Search_Space(type_str="TYPE_N2", is_pthread=True, max_threads=4)
-    search_space_objs.append(new_data_obj)
-    new_data_obj = Search_Space(type_str="TYPE_N2", is_pthread=True, max_threads=8)
-    search_space_objs.append(new_data_obj)
-    new_data_obj = Search_Space(type_str="TYPE_N2", is_pthread=True, max_threads=16)
-    search_space_objs.append(new_data_obj)
-    new_data_obj = Search_Space(type_str="TYPE_N2", is_omp=True, max_threads=1)
-    search_space_objs.append(new_data_obj)
-    new_data_obj = Search_Space(type_str="TYPE_N2", is_omp=True, max_threads=2)
-    search_space_objs.append(new_data_obj)
-    new_data_obj = Search_Space(type_str="TYPE_N2", is_omp=True, max_threads=4)
-    search_space_objs.append(new_data_obj)
-    new_data_obj = Search_Space(type_str="TYPE_N2", is_omp=True, max_threads=8)
-    search_space_objs.append(new_data_obj)
-    new_data_obj = Search_Space(type_str="TYPE_N2", is_omp=True, max_threads=16)
-    search_space_objs.append(new_data_obj)
-    new_data_obj = Search_Space(type_str="TYPE_N2")
-    search_space_objs.append(new_data_obj)
-    '''
     for separate_inv_impl in [False, True]:
         NTT_TYPE = "TYPE_N2"
         for is_lut in [False, True]:
-            for is_avx in [False, True]:
-                # TODO temp skip non-lut parallelization for failures due to difficult access
-                if is_lut:
-                    # TODO temp skip omp with AVX due to not-found race-condition
-                    if not is_avx:
-                        for is_omp in [False, True]:
-                            new_data_obj = Search_Space(type_str=NTT_TYPE, \
-                                                        arch_dict=arch_dict, \
-                                                        is_lut=is_lut, \
-                                                        fixed_radix=False, \
-                                                        max_mixed_radix=1, \
-                                                        is_omp=is_omp, \
-                                                        is_avx=is_avx, \
-                                                        is_recursive=False, \
-                                                        recursive_base_case=0, \
-                                                        separate_inv_impl=separate_inv_impl) 
-                            search_space_objs.append(new_data_obj) 
-                else:
-                    new_data_obj = Search_Space(type_str=NTT_TYPE, \
-                                                arch_dict=arch_dict, \
-                                                is_lut=is_lut, \
-                                                fixed_radix=False, \
-                                                max_mixed_radix=1, \
-                                                is_omp=False, \
-                                                is_avx=is_avx, \
-                                                is_recursive=False, \
-                                                recursive_base_case=0, \
-                                                separate_inv_impl=separate_inv_impl) 
-                    search_space_objs.append(new_data_obj) 
+            # OMP and AVX only work with LUT-based twiddle
+            # solutions due to data dependencies with twiddle calcs
+            if is_lut:
+                for is_avx in [False, True]:
+                    for is_omp in [False, True]:
+                        new_data_obj = Search_Space(type_str=NTT_TYPE, \
+                                                    arch_dict=arch_dict, \
+                                                    is_lut=is_lut, \
+                                                    fixed_radix=False, \
+                                                    max_mixed_radix=1, \
+                                                    is_omp=is_omp, \
+                                                    is_avx=is_avx, \
+                                                    is_recursive=False, \
+                                                    recursive_base_case=0, \
+                                                    ntt_parameters=ntt_parameters, \
+                                                    separate_inv_impl=separate_inv_impl) 
+                        search_space_objs.append(new_data_obj) 
+            else:
+                new_data_obj = Search_Space(type_str=NTT_TYPE, \
+                                            arch_dict=arch_dict, \
+                                            is_lut=is_lut, \
+                                            fixed_radix=False, \
+                                            max_mixed_radix=1, \
+                                            is_omp=False, \
+                                            is_avx=False, \
+                                            is_recursive=False, \
+                                            recursive_base_case=0, \
+                                            ntt_parameters=ntt_parameters, \
+                                            separate_inv_impl=separate_inv_impl) 
+                search_space_objs.append(new_data_obj) 
         NTT_TYPE = "TYPE_FAST"
         for is_recursive in [False, True]:
             for is_lut in [False, True]:
                 if is_recursive:
                     for recursive_base_case in recursive_base_case_range:
-                        # TODO cross this with AVX and OMP
-                        if not is_lut:
+                        # OMP and AVX only work with LUT-based twiddle
+                        # solutions due to data dependencies with twiddle calcs
+                        if is_lut:
                             for is_omp in [False, True]:
                                 for is_avx in [False, True]:
                                     new_data_obj = Search_Space(type_str=NTT_TYPE, \
@@ -263,6 +294,7 @@ def build_search_space(arch_dict):
                                                                 is_avx=is_avx, \
                                                                 is_recursive=True, \
                                                                 recursive_base_case=recursive_base_case, \
+                                                                ntt_parameters=ntt_parameters, \
                                                                 separate_inv_impl=separate_inv_impl) 
                                     search_space_objs.append(new_data_obj) 
                         else:
@@ -275,6 +307,7 @@ def build_search_space(arch_dict):
                                                         is_avx=False, \
                                                         is_recursive=True, \
                                                         recursive_base_case=recursive_base_case, \
+                                                        ntt_parameters=ntt_parameters, \
                                                         separate_inv_impl=separate_inv_impl) 
                             search_space_objs.append(new_data_obj) 
                 else:
@@ -289,6 +322,7 @@ def build_search_space(arch_dict):
                                                         is_avx=False, \
                                                         is_recursive=False, \
                                                         recursive_base_case=0, \
+                                                        ntt_parameters=ntt_parameters, \
                                                         separate_inv_impl=separate_inv_impl) 
                             search_space_objs.append(new_data_obj) 
                         else:
@@ -302,7 +336,69 @@ def build_search_space(arch_dict):
                                                             is_avx=False, \
                                                             is_recursive=False, \
                                                             recursive_base_case=0, \
+                                                            ntt_parameters=ntt_parameters, \
                                                             separate_inv_impl=separate_inv_impl) 
                                 search_space_objs.append(new_data_obj) 
 
     return search_space_objs
+
+# Input: list of search space objects
+def prune_search_space_stack_size(search_space, max_stack):
+    pruned_list = []
+    for search_space_point in search_space:
+        code_gen_point = ns.Ntt_Source(search_space_point)
+        # Call code gen
+        code_gen_point.generate_target()
+        search_space_point.set_stack_size()
+        if (search_space_point.max_stack <= max_stack):
+            pruned_list.append(search_space_point)
+        else:
+            print(f"Pruning {search_space_point.variant_name} due to stack size")
+    return pruned_list
+
+def prune_search_space_heap_size(search_space, max_heap):
+    pruned_list = []
+    for search_space_point in search_space:
+        code_gen_point = ns.Ntt_Source(search_space_point)
+        # Call code gen
+        code_gen_point.generate_target()
+        search_space_point.set_heap_size()
+        if (search_space_point.max_heap <= max_heap):
+            pruned_list.append(search_space_point)
+        else:
+            print(f"Pruning {search_space_point.variant_name} due to heap size")
+    return pruned_list
+
+def prune_search_space_code_size(search_space, max_code):
+    pruned_list = []
+    for search_space_point in search_space:
+        code_gen_point = ns.Ntt_Source(search_space_point)
+        # Call code gen
+        code_gen_point.generate_target()
+        search_space_point.set_code_size()
+        if (search_space_point.code_size <= max_code):
+            pruned_list.append(search_space_point)
+        else:
+            print(f"Attempting with -Os on {search_space_point.variant_name} before pruning")
+            # Attempt to change to "-Os" build flag before pruning
+            search_space_point.optimization_mode = " -Os "
+            search_space_point.set_build_cmd()
+            search_space_point.set_code_size()
+            if (search_space_point.code_size <= max_code):
+                print(f"The flag -Os saved {search_space_point.variant_name} from being pruned")
+            else:
+                print(f"Pruning {search_space_point.variant_name} due to code size")
+    return pruned_list
+
+def prune_search_space_runtime(search_space):
+    runtime_lst = []
+    for search_space_point in search_space:
+        code_gen_point = ns.Ntt_Source(search_space_point)
+        # Call code gen
+        code_gen_point.generate_target()
+        search_space_point.set_runtime()
+        runtime_lst.append(search_space_point.runtime)
+
+    smallest_runtime = min(runtime_lst)
+    min_idx = runtime_lst.index(smallest_runtime)
+    return search_space[min_idx]

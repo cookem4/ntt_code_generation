@@ -7,26 +7,6 @@ import ntt_source as ns
 import ntt_params as nt
 import search_space as ss
 
-# Generate C code for the NTT based on the given input parameters.
-# Note: although the mixed-radix implementation was seen to be slow, code generation for fixed prime factors can help with optimization
-#
-# The code that needs to be dynamically generated apart from the template:
-# 1. The mixed radix implementation
-# 2. Lookup tables
-# For code generation parse the ntt source file. With the build preprocessor macros can form a single
-# NTT output file for the given target point in the search space
-
-# Optimization procedure template:
-# 1. Pick a smart starting point based on the input parameters
-# 2. Run performance benchmark suite
-# 3. Compute slack variables for each parameter
-# 4. Update in direction of furthest distance from target
-# Consider: Weighting to how aggressively to update each parameter
-
-# TODO:
-# Leverage inline assembly
-# AVX instructions
-
 def get_arch():
     bash_command = "lscpu"
     output = ss.run_bash_cmd(bash_command) 
@@ -70,38 +50,65 @@ def main(args):
     # Access command-line arguments using args.argument_name
     dimension = int(args.dimension)
     code_size = int(args.codesize)
-    heap_size = int(args.heap)
+    heap_size = int(args.heapsize)
+    stack_size = int(args.stacksize)
     
     ntt_parameters = nt.NTT_Params(dimension)
 
     arch_dict = get_arch()
 
-    search_space = ss.build_search_space(arch_dict)
+    # Build initial search space
+    search_space = ss.build_search_space(arch_dict, ntt_parameters)
 
-    # Track metrics over time with changing search space point
-    runtime_lst = []
-    code_size_lst = []
-    heap_size_lst = []
-    ir_lst = []
-    metric_lst = []
+    print(f"Initial search space size: {len(search_space)}")
 
-    arch_dict = get_arch()
+    # Will only prune recursive methods based on dimension and the amount of
+    # data allocated to the stack each time
+    print("-----------------------------------------------------------------")
+    if stack_size > 0:
+        search_space = ss.prune_search_space_stack_size(search_space, stack_size)
+        print(f"Size after pruning for stack size: {len(search_space)}")
+    else:
+        print("Skipping stack size pruning")
+    print("-----------------------------------------------------------------")
 
-    # Quick profile based on memory requirements to reduce search space
-    # The idea is a quick conservative estimate to ensure that we stay within
-    # Desired memory footprint
-    for search_space_point in search_space:
-        code_gen_point = ns.Ntt_Source(search_space_point, ntt_parameters)
-        # Call code gen
-        code_gen_point.generate_target()
-        search_space_point.run_test_suite()
-        # After running the test suite we have a point on the domain indicating the code size, etc alongside runtime
-        # We want the minimum runtime that fits within the given constraints on memory utilization
-        metric_lst.append([search_space_point.runtime, search_space_point.code_size, search_space_point.max_heap, search_space_point.instr_ret, search_space_point.variant_name])
+    # Do a quick prune of search space based on code size - don't need to run
+    # anything, just compilation and analysis via the ntt object file size
+    # In this pruning stage, start with "-O3" and if the size doesn't fit
+    # within the boundary try "-Os"
+    # By default the point in the search space should be "-O3", otherwise if
+    # "-Os" is needed to fit, change the build flag in the search space object
+    print("-----------------------------------------------------------------")
+    if code_size > 0:
+        search_space = ss.prune_search_space_code_size(search_space, code_size)
+        print(f"Size after pruning for code size: {len(search_space)}")
+    else:
+        print("Skipping code size pruning")
+    print("-----------------------------------------------------------------")
 
-    for metric in metric_lst:
-        print(f"Runtime: {metric[0]} Code size: {metric[1]} Heap size: {metric[2]} Instructions retired: {metric[3]} Variant: {metric[4]}")
+    # Lastly eliminate based on heap requirements, which will be the most
+    # costly to profile
+    print("-----------------------------------------------------------------")
+    if heap_size > 0:
+        search_space = ss.prune_search_space_heap_size(search_space, heap_size)
+        print(f"Size after pruning for heap size: {len(search_space)}")
+    else:
+        print("Skipping heap size pruning")
+    print("-----------------------------------------------------------------")
 
+    # For the remaining points in the search space, all fit within the program
+    # requirements. Run them all to pick option with lowest time
+    print("-----------------------------------------------------------------")
+    if len(search_space) == 0:
+        print(f"ERROR! no NTT implemenation for the target architecture can be implemented with:\nCode size less than {code_size}B\nPeak heap less than {heap_size}B\nMax stack less than {stack_size}B")
+    else:
+        n_a = "N/A"
+        optimal_point = ss.prune_search_space_runtime(search_space)
+        print(f"Done! Generated NTT implementation {optimal_point.variant_name} to run in {optimal_point.runtime}us with: \nCode size {optimal_point.code_size if code_size > 0 else n_a} B\n Peak heap {optimal_point.max_heap if heap_size > 0 else n_a}B\nMax stack {optimal_point.max_stack if stack_size > 0 else n_a}B\nIs deployed in ntt_target.o")
+    print("-----------------------------------------------------------------")
+
+    ###################
+    # FUTURE WORK
     # ILP Notes:
     # - Might not be needed since search space is relatively small
     # - Caching-based appcoaches could give more insight into complexity of
@@ -112,10 +119,12 @@ def main(args):
     
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Code generation in C for efficient arbitrary-radix NTT implementations")
-    parser.add_argument("-d", "--dimension")
-    parser.add_argument("-s", "--codesize")
-    parser.add_argument("-e", "--heap")
+    parser.add_argument("-d", "--dimension", default=129)
+    parser.add_argument("-c", "--codesize", default=0)
+    parser.add_argument("-e", "--heapsize", default=0)
+    parser.add_argument("-s", "--stacksize", default=0)
     
     args = parser.parse_args()
+
     main(args)
 

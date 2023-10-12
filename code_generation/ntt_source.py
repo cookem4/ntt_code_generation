@@ -24,6 +24,13 @@ class Ntt_Source:
     sub_cco = "*/"
     sub_tab = "\t"
     sub_nl = "\\n"
+    c_stack_check_call = \
+"""
+#if CHECK_STACK
+    profile_stack();
+#endif
+"""
+
 
     def generate_target(self):
         # Use search space point to create code
@@ -34,6 +41,7 @@ class Ntt_Source:
             # TODO stdlib not needed?
             file.write("#include <stdlib.h>\n")
             file.write("#include <stdint.h>\n")
+            file.write("#if CHECK_STACK\nvoid profile_stack();\n#endif\n")
             if self.search_space_point.is_omp:
                 file.write("#include <omp.h>\n")
             if self.search_space_point.is_pthread:
@@ -58,6 +66,7 @@ class Ntt_Source:
             file.write(f"void ntt_impl({self.ntt_parameters.mod_type} *x, {self.ntt_parameters.mod_type} *y, {self.recursive_str} uint8_t inv);\n")
             file.write(f"void ntt_impl_inv({self.ntt_parameters.mod_type} *x, {self.ntt_parameters.mod_type} *y, {self.recursive_str} uint8_t inv);\n")
             file.write(f"#endif {self.sub_co} NTT_H \n")
+
 
         # Write test file
         with open(self.c_test_name, "w") as file:
@@ -114,6 +123,7 @@ uint8_t ntt_check({self.ntt_parameters.mod_type} *x, {self.ntt_parameters.mod_ty
 {self.sub_pc}endif
         {self.sub_cc}
     {self.sub_cc}
+    {self.c_stack_check_call}
     return 1;
 {self.sub_cc}
 """
@@ -150,6 +160,7 @@ f"""
     double elapsed_time;
     gettimeofday(&start, NULL);
 {self.sub_pc}endif
+    {self.c_stack_check_call}
     uint8_t check_res = ntt_check(x, y, x_inv, y_inv);
 {self.sub_pc}if DO_TIME
     gettimeofday(&end, NULL);
@@ -182,6 +193,48 @@ f"""
             file.write(temp_str)
         # End of Write test file
 
+        c_stack_check = \
+f"""
+#if CHECK_STACK
+#include <stdio.h>
+static void *g_stack_top = NULL;
+static int g_stack_grows_up = 0;
+static int g_stack_grows_up_init_done = 0;
+static void *g_stack_ptr_r = NULL;
+static void *g_stack_init = NULL;
+static long int g_peak_stack_size = 0;
+
+void profile_stack() {self.sub_oc}
+    void *stack_ptr;
+    asm volatile("movq %%rsp, %0" : "=r" (stack_ptr));
+    if (g_stack_init == NULL) {self.sub_oc}
+        g_stack_init = stack_ptr;
+        g_stack_top = stack_ptr;
+    {self.sub_cc}
+    if (g_stack_ptr_r != NULL) {self.sub_oc}
+        if (g_stack_ptr_r < stack_ptr && !g_stack_grows_up_init_done) {self.sub_oc}
+            g_stack_grows_up = 1;
+            g_stack_grows_up_init_done = 1;
+        {self.sub_cc} else if (!g_stack_grows_up_init_done) {self.sub_oc}
+            g_stack_grows_up = 0;
+            g_stack_grows_up_init_done = 1;
+        {self.sub_cc}
+        if (g_stack_grows_up && g_stack_top < stack_ptr ||
+           !g_stack_grows_up && g_stack_top > stack_ptr) {self.sub_oc}
+            g_stack_top = stack_ptr;
+            if (g_stack_grows_up) {self.sub_oc}
+                g_peak_stack_size = g_stack_top - g_stack_init;
+            {self.sub_cc} else {self.sub_oc}
+                g_peak_stack_size = g_stack_init - g_stack_top;
+            {self.sub_cc}
+            printf("New stack height: %ld{self.sub_nl}", g_peak_stack_size);
+            printf("Current stack pointer: %p{self.sub_nl}", stack_ptr);
+        {self.sub_cc}
+    {self.sub_cc}
+    g_stack_ptr_r = stack_ptr;
+{self.sub_cc}
+#endif
+"""
 
         # Always defined
         c_barrett_reduction = \
@@ -192,6 +245,7 @@ f"""
   q = (a*({self.ntt_parameters.barrett_q_type}){self.ntt_parameters.barrett_r}) >> {self.ntt_parameters.barrett_k};
   t = a - (q * {self.ntt_parameters.mod});
   t = t >= {self.ntt_parameters.mod} ? t - {self.ntt_parameters.mod} : t;
+  {self.c_stack_check_call}
   return ({self.ntt_parameters.mod_type}) t;
 {self.sub_cc}
 """
@@ -217,6 +271,7 @@ __m{self.avx_width_str}i barrett_reduce_avx(__m{self.avx_width_str}i a) {self.su
   {self.sub_co} Check if t is greater than or equal to mod
   __m{self.avx_width_str}i cmp = _mm{self.avx_width_str}_cmpgt_epi{self.ntt_parameters.mod_prod_trunc}(t, mod_avx);
   t = _mm{self.avx_width_str}_sub_epi{self.ntt_parameters.mod_prod_trunc}(t, _mm{self.avx_width_str}_and_si{self.avx_width_str}(cmp, mod_avx));
+  {self.c_stack_check_call}
   return t;
 {self.sub_cc}
 """
@@ -230,6 +285,7 @@ f"""
   q = (a*({self.ntt_parameters.barrett_q_pow_type}){self.ntt_parameters.barrett_r_pow}) >> {self.ntt_parameters.barrett_k_pow};
   t = a - ({self.ntt_parameters.n_type}) (q * {self.ntt_parameters.n});
   t = t >= {self.ntt_parameters.n} ? t - {self.ntt_parameters.n} : t;
+  {self.c_stack_check_call}
   return t;
 {self.sub_cc}
 """
@@ -240,6 +296,7 @@ f"""
     for ({self.ntt_parameters.mod_type} i = 0; i < b; i++) {self.sub_oc}
         abm = barrett_reduce(abm * a);
     {self.sub_cc}
+    {self.c_stack_check_call}
     return abm;
 {self.sub_cc}
 """
@@ -294,7 +351,8 @@ f"""
             c_static_pow_lut = ""
             c_static_inv_pow_lut = ""
 
-        c_ntt_impl_tot_str = c_barrett_reduction + \
+        c_ntt_impl_tot_str = c_stack_check + \
+                             c_barrett_reduction + \
                              c_barrett_reduction_avx + \
                              c_power_barrett_reduction + \
                              c_a_pow_b_mod_m + \
@@ -925,14 +983,15 @@ f"""
 
         c_ntt_impl_func_end = \
 f"""
+{self.c_stack_check_call}
 {self.sub_cc} {self.sub_co} End ntt_impl
 """
         ntt_impl_string += c_ntt_impl_func_end
         return ntt_impl_string
 
-    def __init__(self, search_space_point, ntt_parameters):
+    def __init__(self, search_space_point):
         self.search_space_point = search_space_point
-        self.ntt_parameters = ntt_parameters
+        self.ntt_parameters = search_space_point.ntt_parameters
         # For FAST implemenations, check the prime factorizaiton and
         # expand the dimension as needed
         if (self.search_space_point.type_str == "TYPE_FAST"):
