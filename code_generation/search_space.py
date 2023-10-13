@@ -3,19 +3,14 @@ import ntt_params as nt
 import pdb
 import subprocess
 import re
+import vprint as vp
 
 def run_bash_cmd(bash_command): 
     try: 
         # Run the command and capture the output and error 
         output = subprocess.check_output(bash_command, shell=True, universal_newlines=True, stderr=subprocess.STDOUT) 
-         
-        # Print the output 
-        # print(output) 
         return output 
     except subprocess.CalledProcessError as e: 
-        # If the command returns a non-zero exit code, it will raise a CalledProcessError 
-        # print(f"Command failed with exit code {e.returncode}:") 
-        # print(e.output) 
         return ""
 
 
@@ -42,7 +37,7 @@ class Search_Space:
             matches = re.findall(r"TIME\:\s+(\d+)\s+us", output)
             running_sum = running_sum + int(matches[0])
         self.runtime = (running_sum / NUM_TIME_RERUN)
-        print(f"Runtime for {self.variant_name} is {self.runtime}")
+        vp.vprint(f"Runtime for {self.variant_name} is {self.runtime}")
 
     def set_heap_size(self):
         # Build first
@@ -70,7 +65,7 @@ class Search_Space:
         self.max_heap = this_max
         bash_command = "rm massif*" 
         output = run_bash_cmd(bash_command) 
-        print(f"Peak heap size for {self.variant_name} is {self.max_heap}")
+        vp.vprint(f"Peak heap size for {self.variant_name} is {self.max_heap}")
 
     def set_stack_size(self):
         # Three options:
@@ -85,7 +80,6 @@ class Search_Space:
         bash_cmd = self.bash_command_build + " \"" 
         # Compile
         output = run_bash_cmd(bash_cmd) 
-        print("Build: " + bash_cmd)
         stack_overflow = False
         # NOTE: this value is in KB
         bash_cmd = "ulimit -s"
@@ -100,14 +94,13 @@ class Search_Space:
             cur_cntr = cur_cntr // 2
             bash_cmd = "prlimit --pid=$$ --stack=" + str(cur_stack_height) + " && " + self.prog_name
             output = run_bash_cmd(bash_cmd)
-            # print(f"Running with stack {str(cur_stack_height>>10)}KB : {output}")
             matches = "" if output is None else re.findall(r"PASS", output)
             if (matches):
                 cur_stack_height -= cur_cntr
             else:
                 cur_stack_height += cur_cntr
         self.max_stack = cur_stack_height
-        print(f"Peak stack size for {self.variant_name} is {self.max_stack}")
+        vp.vprint(f"Peak stack size for {self.variant_name} is {self.max_stack}")
 
     def set_code_size(self):
         # Check code size in B 
@@ -118,21 +111,21 @@ class Search_Space:
         output = run_bash_cmd(bash_command) 
         matches = re.findall(r"\d+\s+\d+\s+\d+\s+(\d+)", output)
         self.code_size = int(matches[0])
-        print(f"Code size for {self.variant_name} is {self.code_size}")
+        vp.vprint(f"Code size for {self.variant_name} is {self.code_size}")
 
     # Full suite of tests, not done by pruning
     def run_test_suite(self):
         bash_command = self.bash_command_build + "\"" 
-        print(bash_command)
+        vp.vprint(bash_command)
         # Compile the program 
         output = run_bash_cmd(bash_command) 
         # Run the program 
         output = run_bash_cmd(self.prog_name) 
-        print(output)
+        vp.vprint(output)
         if (output.find("PASS") != -1): 
-            print("PASSED for NTT: " + self.variant_name) 
+            vp.vprint(str("PASSED for NTT: " + self.variant_name)) 
         else: 
-            print("FAILED for NTT: " + self.variant_name) 
+            vp.vprint(str("FAILED for NTT: " + self.variant_name)) 
 
         # Tools: 
         # valgrind --tool=cachegrind,massif,callgrind 
@@ -374,7 +367,7 @@ def prune_search_space_stack_size(search_space, max_stack):
         if (search_space_point.max_stack <= max_stack):
             pruned_list.append(search_space_point)
         else:
-            print(f"Pruning {search_space_point.variant_name} due to stack size")
+            vp.vprint(f"Pruning {search_space_point.variant_name} due to stack size")
     return pruned_list
 
 def prune_search_space_heap_size(search_space, max_heap):
@@ -387,7 +380,7 @@ def prune_search_space_heap_size(search_space, max_heap):
         if (search_space_point.max_heap <= max_heap):
             pruned_list.append(search_space_point)
         else:
-            print(f"Pruning {search_space_point.variant_name} due to heap size")
+            vp.vprint(f"Pruning {search_space_point.variant_name} due to heap size")
     return pruned_list
 
 def prune_search_space_code_size(search_space, max_code):
@@ -400,15 +393,15 @@ def prune_search_space_code_size(search_space, max_code):
         if (search_space_point.code_size <= max_code):
             pruned_list.append(search_space_point)
         else:
-            print(f"Attempting with -Os on {search_space_point.variant_name} before pruning")
+            vp.vprint(f"Attempting with -Os on {search_space_point.variant_name} before pruning")
             # Attempt to change to "-Os" build flag before pruning
             search_space_point.optimization_mode = " -Os "
             search_space_point.set_build_cmd()
             search_space_point.set_code_size()
             if (search_space_point.code_size <= max_code):
-                print(f"The flag -Os saved {search_space_point.variant_name} from being pruned")
+                vp.vprint(f"The flag -Os saved {search_space_point.variant_name} from being pruned")
             else:
-                print(f"Pruning {search_space_point.variant_name} due to code size")
+                vp.vprint(f"Pruning {search_space_point.variant_name} due to code size")
     return pruned_list
 
 def prune_search_space_runtime(search_space):

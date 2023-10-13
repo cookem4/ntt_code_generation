@@ -8,6 +8,7 @@ import ntt_params as nt
 import search_space as ss
 import math
 import pdb
+import vprint as vp
 
 # This class should be able to build out the source code given a set of NTT
 # parameters and a search space object defining the point in the space
@@ -993,11 +994,11 @@ f"""
         # expand the dimension as needed
         if (self.search_space_point.type_str == "TYPE_FAST"):
             dimension = self.ntt_parameters.n
-            print("Original dimension of ", dimension)
+            vp.vprint("Original dimension of " +  str(dimension))
             while max(self.ntt_parameters.prime_factorization) > self.search_space_point.max_mixed_radix:
                 dimension += 1
                 self.ntt_parameters = nt.NTT_Params(dimension)
-            print("Dimension expanded to ", dimension)
+            vp.vprint("Dimension expanded to " + str(dimension))
         self.avx_width_str = ""
         avx_temp = 256
         if self.search_space_point.is_avx2:
@@ -1015,7 +1016,9 @@ f"""
 
         if (self.search_space_point.type_str == "TYPE_N2" and self.search_space_point.is_avx):
             # For AVX, expand to multiple of avx reg width
+            vp.vprint("Original dimension of " + str(self.ntt_parameters.n))
             self.ntt_parameters = nt.NTT_Params(self.avx_reg_width * int(math.ceil(self.ntt_parameters.n / self.avx_reg_width)))
+            vp.vprint("Dimension expanded to " + str(self.ntt_parameters.n))
             # For AVX, we also need to use the X and Y variables on the same
             # width as the product - i.e. the width gets doubled. This prevents
             # overflow when doing AVX mulitplication
