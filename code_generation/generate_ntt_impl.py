@@ -62,16 +62,6 @@ def main(args):
 
     print(f"Initial search space size: {len(search_space)}")
 
-    # Will only prune recursive methods based on dimension and the amount of
-    # data allocated to the stack each time
-    print("-----------------------------------------------------------------")
-    if stack_size > 0:
-        search_space = ss.prune_search_space_stack_size(search_space, stack_size)
-        print(f"Size after pruning for stack size: {len(search_space)}")
-    else:
-        print("Skipping stack size pruning")
-    print("-----------------------------------------------------------------")
-
     # Do a quick prune of search space based on code size - don't need to run
     # anything, just compilation and analysis via the ntt object file size
     # In this pruning stage, start with "-O3" and if the size doesn't fit
@@ -84,6 +74,15 @@ def main(args):
         print(f"Size after pruning for code size: {len(search_space)}")
     else:
         print("Skipping code size pruning")
+    print("-----------------------------------------------------------------")
+
+    # Does a binary search of max process stack size
+    print("-----------------------------------------------------------------")
+    if stack_size > 0:
+        search_space = ss.prune_search_space_stack_size(search_space, stack_size)
+        print(f"Size after pruning for stack size: {len(search_space)}")
+    else:
+        print("Skipping stack size pruning")
     print("-----------------------------------------------------------------")
 
     # Lastly eliminate based on heap requirements, which will be the most
@@ -104,7 +103,7 @@ def main(args):
     else:
         n_a = "N/A"
         optimal_point = ss.prune_search_space_runtime(search_space)
-        print(f"Done! Generated NTT implementation {optimal_point.variant_name} to run in {optimal_point.runtime}us with: \nCode size {optimal_point.code_size if code_size > 0 else n_a} B\n Peak heap {optimal_point.max_heap if heap_size > 0 else n_a}B\nMax stack {optimal_point.max_stack if stack_size > 0 else n_a}B\nIs deployed in ntt_target.o")
+        print(f"Done! Generated NTT implementation {optimal_point.variant_name} to run in {optimal_point.runtime}us with: \nCode size {optimal_point.code_size if code_size > 0 else n_a} B\nPeak heap {optimal_point.max_heap if heap_size > 0 else n_a}B\nMax stack {optimal_point.max_stack if stack_size > 0 else n_a}B\nIs deployed in ntt_target.o")
     print("-----------------------------------------------------------------")
 
     ###################

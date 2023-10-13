@@ -1,5 +1,6 @@
 import ntt_source as ns
 import ntt_params as nt
+import pdb
 import subprocess
 import re
 
@@ -13,8 +14,9 @@ def run_bash_cmd(bash_command):
         return output 
     except subprocess.CalledProcessError as e: 
         # If the command returns a non-zero exit code, it will raise a CalledProcessError 
-        print(f"Command failed with exit code {e.returncode}:") 
-        print(e.output) 
+        # print(f"Command failed with exit code {e.returncode}:") 
+        # print(e.output) 
+        return ""
 
 
 class Search_Space: 
@@ -71,21 +73,40 @@ class Search_Space:
         print(f"Peak heap size for {self.variant_name} is {self.max_heap}")
 
     def set_stack_size(self):
-        # Two options:
+        # Three options:
         # 1. Use stack token allocation
         # 2. Only calculate based on an estimation
         # of intrinsic data needed for recursive definitions, otherwise 
         # stack size will likely be insignificant, other than arrays local to
         # functions
+        # 3. Modify stack size with "ulimit -s <#>" until stack overflow
 
-        # Doing option 1
-        bash_cmd = self.bash_command_build + " -DCHECK_STACK=1 \"" 
-        # Compile with stack 
+        # Doing option 3
+        bash_cmd = self.bash_command_build + " \"" 
+        # Compile
         output = run_bash_cmd(bash_cmd) 
-        print("Build " + bash_cmd)
-        # Run program
-        output = run_bash_cmd(self.prog_name) 
-        print(output)
+        print("Build: " + bash_cmd)
+        stack_overflow = False
+        # NOTE: this value is in KB
+        bash_cmd = "ulimit -s"
+        output = run_bash_cmd(bash_cmd)
+        initial_stack_height = int(output)
+        # prlimit accepts B, ulimit does KB
+        cur_stack_height = 1024*initial_stack_height
+        cur_cntr = cur_stack_height
+        # Binary search until peak stack height determined
+        # Run program with modified stack
+        while (cur_cntr > 0):
+            cur_cntr = cur_cntr // 2
+            bash_cmd = "prlimit --pid=$$ --stack=" + str(cur_stack_height) + " && " + self.prog_name
+            output = run_bash_cmd(bash_cmd)
+            # print(f"Running with stack {str(cur_stack_height>>10)}KB : {output}")
+            matches = "" if output is None else re.findall(r"PASS", output)
+            if (matches):
+                cur_stack_height -= cur_cntr
+            else:
+                cur_stack_height += cur_cntr
+        self.max_stack = cur_stack_height
         print(f"Peak stack size for {self.variant_name} is {self.max_stack}")
 
     def set_code_size(self):
