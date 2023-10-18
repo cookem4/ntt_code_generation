@@ -103,19 +103,6 @@ class Search_Space:
         self.max_stack = cur_stack_height
         vp.vprint(f"Peak stack size for {self.variant_name} is {self.max_stack}")
 
-    def set_code_lines(self):
-        # Check code size in B by parsing dissassembly
-        # Build first
-        bash_command = self.bash_command_build + " \"" 
-        output = run_bash_cmd(bash_command) 
-        # Check code size in Assembly lines 
-        bash_command = "objdump -d -t ntt_target.o"
-        output = run_bash_cmd(bash_command) 
-        matches = re.findall(r"(\s+[0-9A-Fa-f]+)\:", output)
-        # Get last address
-        self.code_lines = int(matches[-1], 16)
-        vp.vprint(f"Code size for {self.variant_name} is {self.code_lines}")
-
     def set_code_size(self):
         # Check code size in B 
         # Build first
@@ -126,6 +113,18 @@ class Search_Space:
         matches = re.findall(r"\d+\s+\d+\s+\d+\s+(\d+)", output)
         self.code_size = int(matches[0])
         vp.vprint(f"Code size for {self.variant_name} is {self.code_size}")
+
+    def set_code_lines(self):
+        # Check code size in B 
+        # Build first
+        bash_command = self.bash_command_build + " \"" 
+        output = run_bash_cmd(bash_command) 
+        # Check code size in Assembly lines 
+        bash_command = "objdump -d -t ntt_target.o"
+        output = run_bash_cmd(bash_command) 
+        matches = re.findall(r"(\s+[0-9A-Fa-f]+)\:", output)
+        self.code_lines = int(matches[-1], 16)
+        vp.vprint(f"Code size for {self.variant_name} is {self.code_lines}")
 
     # Full suite of tests, not done by pruning
     def run_test_suite(self):
@@ -265,12 +264,11 @@ class Search_Space:
 def build_search_space(arch_dict, ntt_parameters):
     # TODO might want to move these vectors into a file instead of looping over them
     # manually
-    mixed_radix_range = [3, 5, 7, 11, 13]
+    mixed_radix_range = [3, 11]
     # TODO recursive_base_case=32 fails with N=1024?
-    recursive_base_case_range = [8, 16, 32, 64, 128, 256]
+    recursive_base_case_range = [64, 256]
     search_space_objs = [] 
-    # Cross product of search space creates a set of NTT objects with certain attributes
-    for separate_inv_impl in [False, True]:
+    for separate_inv_impl in [False]:
         NTT_TYPE = "TYPE_N2"
         for is_lut in [False, True]:
             # OMP and AVX only work with LUT-based twiddle
@@ -403,18 +401,16 @@ def prune_search_space_code_size(search_space, max_code):
         code_gen_point = ns.Ntt_Source(search_space_point)
         # Call code gen
         code_gen_point.generate_target()
-        # search_space_point.set_code_size()
-        search_space_point.set_code_lines()
-        if (search_space_point.code_lines <= max_code):
+        search_space_point.set_code_size()
+        if (search_space_point.code_size <= max_code):
             pruned_list.append(search_space_point)
         else:
             vp.vprint(f"Attempting with -Os on {search_space_point.variant_name} before pruning")
             # Attempt to change to "-Os" build flag before pruning
             search_space_point.optimization_mode = " -Os "
             search_space_point.set_build_cmd()
-            # search_space_point.set_code_size()
-            search_space_point.set_code_lines()
-            if (search_space_point.code_lines <= max_code):
+            search_space_point.set_code_size()
+            if (search_space_point.code_size <= max_code):
                 vp.vprint(f"The flag -Os saved {search_space_point.variant_name} from being pruned")
             else:
                 vp.vprint(f"Pruning {search_space_point.variant_name} due to code size")
